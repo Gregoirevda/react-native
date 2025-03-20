@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @generated SignedSource<<2bfa4670757aa340c88ae8ff57270308>>
+ * @generated SignedSource<<e3a8b03ca156d28f227f00c5507adb5f>>
  */
 
 /**
@@ -14,7 +14,7 @@
  *   packages/react-native/scripts/featureflags/ReactNativeFeatureFlags.config.js.
  *
  * To regenerate this code, run the following script from the repo root:
- *   yarn featureflags-update
+ *   yarn featureflags --update
  */
 
 #pragma once
@@ -31,35 +31,79 @@ class ReactNativeFeatureFlagsDefaults : public ReactNativeFeatureFlagsProvider {
     return false;
   }
 
-  bool allowCollapsableChildren() override {
+  bool animatedShouldSignalBatch() override {
+    return false;
+  }
+
+  bool disableMountItemReorderingAndroid() override {
+    return false;
+  }
+
+  bool enableAccumulatedUpdatesInRawPropsAndroid() override {
+    return false;
+  }
+
+  bool enableBridgelessArchitecture() override {
+    return false;
+  }
+
+  bool enableCppPropsIteratorSetter() override {
+    return false;
+  }
+
+  bool enableEagerRootViewAttachment() override {
+    return false;
+  }
+
+  bool enableFabricLogs() override {
+    return false;
+  }
+
+  bool enableFabricRenderer() override {
+    return false;
+  }
+
+  bool enableIOSViewClipToPaddingBox() override {
+    return false;
+  }
+
+  bool enableImagePrefetchingAndroid() override {
+    return false;
+  }
+
+  bool enableJSRuntimeGCOnMemoryPressureOnIOS() override {
+    return false;
+  }
+
+  bool enableLayoutAnimationsOnAndroid() override {
+    return false;
+  }
+
+  bool enableLayoutAnimationsOnIOS() override {
     return true;
   }
 
-  bool androidEnablePendingFabricTransactions() override {
+  bool enableLongTaskAPI() override {
     return false;
   }
 
-  bool batchRenderingUpdatesInEventLoop() override {
+  bool enableMainQueueModulesOnIOS() override {
     return false;
   }
 
-  bool destroyFabricSurfacesInReactInstanceManager() override {
+  bool enableNativeCSSParsing() override {
     return false;
   }
 
-  bool enableBackgroundExecutor() override {
+  bool enableNewBackgroundAndBorderDrawables() override {
     return false;
   }
 
-  bool enableCleanTextInputYogaNode() override {
+  bool enablePropsUpdateReconciliationAndroid() override {
     return false;
   }
 
-  bool enableGranularShadowTreeStateReconciliation() override {
-    return false;
-  }
-
-  bool enableMicrotasks() override {
+  bool enableReportEventPaintTime() override {
     return false;
   }
 
@@ -71,19 +115,39 @@ class ReactNativeFeatureFlagsDefaults : public ReactNativeFeatureFlagsProvider {
     return false;
   }
 
-  bool fixStoppedSurfaceRemoveDeleteTreeUIFrameCallbackLeak() override {
+  bool enableViewCulling() override {
     return false;
   }
 
-  bool forceBatchingMountItemsOnAndroid() override {
+  bool enableViewRecycling() override {
     return false;
   }
 
-  bool inspectorEnableCxxInspectorPackagerConnection() override {
+  bool enableViewRecyclingForText() override {
+    return true;
+  }
+
+  bool enableViewRecyclingForView() override {
+    return true;
+  }
+
+  bool fixDifferentiatorEmittingUpdatesWithWrongParentTag() override {
+    return true;
+  }
+
+  bool fixMappingOfEventPrioritiesBetweenFabricAndReact() override {
     return false;
   }
 
-  bool inspectorEnableModernCDPRegistry() override {
+  bool fixMountingCoordinatorReportedPendingTransactionsOnAndroid() override {
+    return false;
+  }
+
+  bool fuseboxEnabledRelease() override {
+    return false;
+  }
+
+  bool fuseboxNetworkInspectionEnabled() override {
     return false;
   }
 
@@ -91,15 +155,27 @@ class ReactNativeFeatureFlagsDefaults : public ReactNativeFeatureFlagsProvider {
     return false;
   }
 
-  bool preventDoubleTextMeasure() override {
+  bool removeTurboModuleManagerDelegateMutex() override {
     return false;
   }
 
-  bool setAndroidLayoutDirection() override {
+  bool throwExceptionInsteadOfDeadlockOnTurboModuleSetupDuringSyncRenderIOS() override {
     return false;
   }
 
-  bool useModernRuntimeScheduler() override {
+  bool traceTurboModulePromiseRejectionsOnAndroid() override {
+    return false;
+  }
+
+  bool useAlwaysAvailableJSErrorHandling() override {
+    return false;
+  }
+
+  bool useEditTextStockAndroidFocusBehavior() override {
+    return true;
+  }
+
+  bool useFabricInterop() override {
     return false;
   }
 
@@ -107,7 +183,19 @@ class ReactNativeFeatureFlagsDefaults : public ReactNativeFeatureFlagsProvider {
     return false;
   }
 
-  bool useStateAlignmentMechanism() override {
+  bool useOptimizedEventBatchingOnAndroid() override {
+    return false;
+  }
+
+  bool useRawPropsJsiValue() override {
+    return false;
+  }
+
+  bool useTurboModuleInterop() override {
+    return false;
+  }
+
+  bool useTurboModules() override {
     return false;
   }
 };

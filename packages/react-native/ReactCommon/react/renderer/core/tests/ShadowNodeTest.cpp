@@ -8,6 +8,8 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include <react/featureflags/ReactNativeFeatureFlags.h>
+#include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/renderer/core/ConcreteShadowNode.h>
 #include <react/renderer/core/ShadowNode.h>
 
@@ -15,7 +17,7 @@
 
 using namespace facebook::react;
 
-class ShadowNodeTest : public ::testing::Test {
+class ShadowNodeTest : public testing::Test {
  protected:
   ShadowNodeTest()
       : eventDispatcher_(std::shared_ptr<const EventDispatcher>()),
@@ -133,6 +135,16 @@ class ShadowNodeTest : public ::testing::Test {
         },
         familyZ,
         traits);
+
+    ReactNativeFeatureFlags::dangerouslyReset();
+  }
+
+  void SetUp() override {
+    ShadowNode::setUseRuntimeShadowNodeReferenceUpdateOnThread(true);
+  }
+
+  void TearDown() override {
+    ReactNativeFeatureFlags::dangerouslyReset();
   }
 
   std::shared_ptr<const EventDispatcher> eventDispatcher_;
@@ -212,26 +224,6 @@ TEST_F(ShadowNodeTest, handleCloneFunction) {
   EXPECT_EQ(nodeAB_->getProps(), nodeABClone->getProps());
 }
 
-TEST_F(ShadowNodeTest, handleCloningWithTraits) {
-  auto clonedWithoutTraits = nodeAB_->clone({});
-
-  EXPECT_FALSE(clonedWithoutTraits->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
-
-  auto newTraits = ShadowNodeTraits();
-  newTraits.set(ShadowNodeTraits::Trait::ClonedByNativeStateUpdate);
-
-  auto clonedWithTraits = clonedWithoutTraits->clone({.traits = newTraits});
-
-  EXPECT_TRUE(clonedWithTraits->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
-
-  auto clonedAgain = clonedWithTraits->clone({});
-
-  EXPECT_FALSE(clonedAgain->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
-}
-
 TEST_F(ShadowNodeTest, handleState) {
   auto family = componentDescriptor_.createFamily(ShadowNodeFamilyFragment{
       /* .tag = */ 9,
@@ -287,33 +279,19 @@ TEST_F(ShadowNodeTest, handleState) {
       "Attempt to mutate a sealed object.");
 }
 
-TEST_F(ShadowNodeTest, testCloneTree) {
-  auto& family = nodeABA_->getFamily();
-  auto newTraits = ShadowNodeTraits();
-  newTraits.set(ShadowNodeTraits::Trait::ClonedByNativeStateUpdate);
-  auto rootNode = nodeA_->cloneTree(
-      family,
-      [newTraits](const ShadowNode& oldShadowNode) {
-        return oldShadowNode.clone({.traits = newTraits});
-      },
-      newTraits);
+TEST_F(ShadowNodeTest, handleRuntimeReferenceTransferOnClone) {
+  auto nodeABRev1 = nodeAB_->clone({});
+  auto wrappedShadowNode = std::make_shared<ShadowNodeWrapper>(nodeABRev1);
+  nodeABRev1->setRuntimeShadowNodeReference(wrappedShadowNode);
 
-  EXPECT_TRUE(rootNode->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
+  auto nodeABRev2 = nodeABRev1->clone({});
 
-  EXPECT_FALSE(rootNode->getChildren()[0]->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
+  // The wrappedShadowNode should reference the new latest clone
+  EXPECT_EQ(wrappedShadowNode->shadowNode, nodeABRev2);
 
-  const auto& firstLevelChild = *rootNode->getChildren()[1];
+  auto nodeABRev3 = componentDescriptor_.cloneShadowNode(
+      *nodeABRev2, {.runtimeShadowNodeReference = false});
 
-  EXPECT_TRUE(firstLevelChild.getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
-
-  EXPECT_FALSE(firstLevelChild.getChildren()[1]->getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
-
-  const auto& secondLevelchild = *firstLevelChild.getChildren()[0];
-
-  EXPECT_TRUE(secondLevelchild.getTraits().check(
-      ShadowNodeTraits::Trait::ClonedByNativeStateUpdate));
+  // The wrappedShadowNode should still reference nodeABRev2
+  EXPECT_EQ(wrappedShadowNode->shadowNode, nodeABRev2);
 }

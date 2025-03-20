@@ -10,10 +10,10 @@ package com.facebook.react.devsupport;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.annotation.Nullable;
+import com.facebook.infer.annotation.Nullsafe;
 import com.facebook.jni.HybridData;
 import com.facebook.proguard.annotations.DoNotStrip;
 import java.io.Closeable;
-import java.util.OptionalInt;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -22,34 +22,37 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
 /** Java wrapper around a C++ InspectorPackagerConnection. */
-/* package */ class CxxInspectorPackagerConnection implements IInspectorPackagerConnection {
+/* package */ @Nullsafe(Nullsafe.Mode.LOCAL)
+class CxxInspectorPackagerConnection implements IInspectorPackagerConnection {
   static {
     DevSupportSoLoader.staticInit();
   }
 
   @DoNotStrip private final HybridData mHybridData;
 
-  public CxxInspectorPackagerConnection(String url, String packageName) {
-    mHybridData = initHybrid(url, packageName, new DelegateImpl());
+  public CxxInspectorPackagerConnection(String url, String deviceName, String packageName) {
+    mHybridData = initHybrid(url, deviceName, packageName, new DelegateImpl());
   }
 
   private static native HybridData initHybrid(
-      String url, String packageName, DelegateImpl delegate);
+      String url, String deviceName, String packageName, DelegateImpl delegate);
 
   public native void connect();
 
   public native void closeQuietly();
 
-  public native void sendEventToAllConnections(String event);
+  public native void sendEventToAllConnections(@Nullable String event);
 
   /** Java wrapper around a C++ IWebSocketDelegate, allowing us to call the interface from Java. */
   @DoNotStrip
   private static class WebSocketDelegate implements Closeable {
     private final HybridData mHybridData;
 
-    public native void didFailWithError(OptionalInt posixCode, String error);
+    public native void didFailWithError(@Nullable Integer posixCode, String error);
 
     public native void didReceiveMessage(String message);
+
+    public native void didOpen();
 
     public native void didClose();
 
@@ -93,6 +96,7 @@ import okhttp3.WebSocketListener;
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
 
+    @DoNotStrip
     public IWebSocket connectWebSocket(String url, WebSocketDelegate delegate) {
       Request request = new Request.Builder().url(url).build();
       final WebSocket webSocket =
@@ -101,25 +105,54 @@ import okhttp3.WebSocketListener;
               new WebSocketListener() {
                 @Override
                 public void onFailure(WebSocket _unused, Throwable t, @Nullable Response response) {
-                  @Nullable String message = t.getMessage();
-                  delegate.didFailWithError(
-                      OptionalInt.empty(), message != null ? message : "<Unknown error>");
-                  // "No further calls to this listener will be made." -OkHttp docs for
-                  // WebSocketListener.onFailure
-                  delegate.close();
+                  scheduleCallback(
+                      new Runnable() {
+                        public void run() {
+                          @Nullable String message = t.getMessage();
+                          delegate.didFailWithError(
+                              null, message != null ? message : "<Unknown error>");
+                          // "No further calls to this listener will be made." -OkHttp docs for
+                          // WebSocketListener.onFailure
+                          delegate.close();
+                        }
+                      },
+                      0);
                 }
 
                 @Override
                 public void onMessage(WebSocket _unused, String text) {
-                  delegate.didReceiveMessage(text);
+                  scheduleCallback(
+                      new Runnable() {
+                        public void run() {
+                          delegate.didReceiveMessage(text);
+                        }
+                      },
+                      0);
+                }
+
+                @Override
+                public void onOpen(WebSocket _webSocket, Response response) {
+                  scheduleCallback(
+                      new Runnable() {
+                        public void run() {
+                          delegate.didOpen();
+                        }
+                      },
+                      0);
                 }
 
                 @Override
                 public void onClosed(WebSocket _unused, int code, String reason) {
-                  delegate.didClose();
-                  // "No further calls to this listener will be made." -OkHttp docs for
-                  // WebSocketListener.onClosed
-                  delegate.close();
+                  scheduleCallback(
+                      new Runnable() {
+                        public void run() {
+                          delegate.didClose();
+                          // "No further calls to this listener will be made." -OkHttp docs for
+                          // WebSocketListener.onClosed
+                          delegate.close();
+                        }
+                      },
+                      0);
                 }
               });
       return new IWebSocket() {
@@ -135,6 +168,7 @@ import okhttp3.WebSocketListener;
       };
     }
 
+    @DoNotStrip
     public void scheduleCallback(Runnable runnable, long delayMs) {
       mHandler.postDelayed(runnable, delayMs);
     }

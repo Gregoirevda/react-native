@@ -10,7 +10,9 @@
 
 'use strict';
 
-import type {NativeMethods} from 'react-native/Libraries/Renderer/shims/ReactNativeTypes';
+import type {HostInstance} from 'react-native';
+
+import {RNTesterThemeContext} from '../../components/RNTesterTheme';
 
 const ScreenshotManager = require('../../../NativeModuleExample/NativeScreenshotManager');
 const React = require('react');
@@ -28,8 +30,8 @@ const DESTRUCTIVE_INDEX = 3;
 const CANCEL_INDEX = 4;
 const DISABLED_BUTTON_INDICES = [1, 2];
 
-type Props = $ReadOnly<{||}>;
-type State = {|clicked: string|};
+type Props = $ReadOnly<{}>;
+type State = {clicked: string};
 class ActionSheetExample extends React.Component<Props, State> {
   state: State = {
     clicked: 'none',
@@ -37,12 +39,20 @@ class ActionSheetExample extends React.Component<Props, State> {
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showActionSheet} style={style.button}>
-          Click to show the ActionSheet
-        </Text>
-        <Text>Clicked button: {this.state.clicked}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -70,12 +80,20 @@ class ActionSheetTintExample extends React.Component<
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showActionSheet} style={style.button}>
-          Click to show the ActionSheet
-        </Text>
-        <Text>Clicked button: {this.state.clicked}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -104,12 +122,20 @@ class ActionSheetCancelButtonTintExample extends React.Component<
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showActionSheet} style={style.button}>
-          Click to show the ActionSheet
-        </Text>
-        <Text>Clicked button: {this.state.clicked}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -129,6 +155,50 @@ class ActionSheetCancelButtonTintExample extends React.Component<
   };
 }
 
+class ActionSheetDisabledButtonTintExample extends React.Component<
+  $FlowFixMeProps,
+  $FlowFixMeState,
+> {
+  state: any | {clicked: string} = {
+    clicked: 'none',
+  };
+
+  render(): React.Node {
+    return (
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
+    );
+  }
+
+  showActionSheet = () => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: BUTTONS,
+        cancelButtonIndex: CANCEL_INDEX,
+        destructiveButtonIndex: DESTRUCTIVE_INDEX,
+        disabledButtonIndices: DISABLED_BUTTON_INDICES,
+        tintColor: 'black',
+        disabledButtonTintColor: 'gray',
+      },
+      buttonIndex => {
+        this.setState({clicked: BUTTONS[buttonIndex]});
+      },
+    );
+  };
+}
+
 class ActionSheetAnchorExample extends React.Component<
   $FlowFixMeProps,
   $FlowFixMeState,
@@ -137,24 +207,30 @@ class ActionSheetAnchorExample extends React.Component<
     clicked: 'none',
   };
 
-  anchorRef: {current: null | $Exact<NativeMethods>} = React.createRef();
+  anchorRef: {current: null | HostInstance} = React.createRef();
 
   render(): React.Node {
     return (
-      <View>
-        <View style={style.anchorRow}>
-          <Text style={style.button}>
-            Click there to show the ActionSheet ->
-          </Text>
-          <Text
-            onPress={this.showActionSheet}
-            style={style.button}
-            ref={this.anchorRef}>
-            HERE
-          </Text>
-        </View>
-        <Text>Clicked button: {this.state.clicked}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <View style={style.anchorRow}>
+              <Text style={[style.button, {color: theme.SecondaryLabelColor}]}>
+                Click there to show the ActionSheet ->
+              </Text>
+              <Text
+                onPress={this.showActionSheet}
+                style={[style.button, {color: theme.SecondaryLabelColor}]}
+                ref={this.anchorRef}>
+                HERE
+              </Text>
+            </View>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -182,12 +258,20 @@ class ActionSheetDisabledExample extends React.Component<Props, State> {
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showActionSheet} style={style.button}>
-          Click to show the ActionSheet
-        </Text>
-        <Text>Clicked button: {this.state.clicked}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              Clicked button: {this.state.clicked}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -209,12 +293,18 @@ class ActionSheetDisabledExample extends React.Component<Props, State> {
 class ActionSheetDismissExample extends React.Component<{...}> {
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showAndDismissActionSheet} style={style.button}>
-          Click to show and automatically dismiss the ActionSheet after 3
-          seconds
-        </Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showAndDismissActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show and automatically dismiss the ActionSheet after 3
+              seconds
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -244,12 +334,20 @@ class ShareActionSheetExample extends React.Component<
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showShareActionSheet} style={style.button}>
-          Click to show the Share ActionSheet
-        </Text>
-        <Text>{this.state.text}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showShareActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the Share ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              {this.state.text}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -261,11 +359,11 @@ class ShareActionSheetExample extends React.Component<
         subject: 'a subject to go in the email heading',
         excludedActivityTypes: ['com.apple.UIKit.activity.PostToTwitter'],
       },
-      error => Alert.alert('Error', error),
+      error => Alert.alert('Error', error?.message),
       (completed, method) => {
         let text;
         if (completed) {
-          text = `Shared via ${method}`;
+          text = `Shared via ${method ?? 'unknown'}`;
         } else {
           text = "You didn't share";
         }
@@ -285,12 +383,20 @@ class ShareScreenshotExample extends React.Component<
 
   render(): React.Node {
     return (
-      <View>
-        <Text onPress={this.showShareActionSheet} style={style.button}>
-          Click to show the Share ActionSheet
-        </Text>
-        <Text>{this.state.text}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <Text
+              onPress={this.showShareActionSheet}
+              style={[style.button, {color: theme.SecondaryLabelColor}]}>
+              Click to show the Share ActionSheet
+            </Text>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              {this.state.text}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -304,11 +410,11 @@ class ShareScreenshotExample extends React.Component<
             url: uri,
             excludedActivityTypes: ['com.apple.UIKit.activity.PostToTwitter'],
           },
-          error => Alert.alert('Error', error),
+          error => Alert.alert('Error', error?.message),
           (completed, method) => {
             let text;
             if (completed) {
-              text = `Shared via ${method}`;
+              text = `Shared via ${method ?? 'unknown'}`;
             } else {
               text = "You didn't share";
             }
@@ -328,24 +434,30 @@ class ShareScreenshotAnchorExample extends React.Component<
     text: '',
   };
 
-  anchorRef: {current: null | $Exact<NativeMethods>} = React.createRef();
+  anchorRef: {current: null | HostInstance} = React.createRef();
 
   render(): React.Node {
     return (
-      <View>
-        <View style={style.anchorRow}>
-          <Text style={style.button}>
-            Click to show the Share ActionSheet ->
-          </Text>
-          <Text
-            onPress={this.showShareActionSheet}
-            style={style.button}
-            ref={this.anchorRef}>
-            HERE
-          </Text>
-        </View>
-        <Text>{this.state.text}</Text>
-      </View>
+      <RNTesterThemeContext.Consumer>
+        {theme => (
+          <View>
+            <View style={style.anchorRow}>
+              <Text style={[style.button, {color: theme.SecondaryLabelColor}]}>
+                Click to show the Share ActionSheet ->
+              </Text>
+              <Text
+                onPress={this.showShareActionSheet}
+                style={[style.button, {color: theme.SecondaryLabelColor}]}
+                ref={this.anchorRef}>
+                HERE
+              </Text>
+            </View>
+            <Text style={{color: theme.SecondaryLabelColor}}>
+              {this.state.text}
+            </Text>
+          </View>
+        )}
+      </RNTesterThemeContext.Consumer>
     );
   }
 
@@ -362,11 +474,11 @@ class ShareScreenshotAnchorExample extends React.Component<
               ? findNodeHandle(this.anchorRef.current)
               : undefined,
           },
-          error => Alert.alert('Error', error),
+          error => Alert.alert('Error', error?.message),
           (completed, method) => {
             let text;
             if (completed) {
-              text = `Shared via ${method}`;
+              text = `Shared via ${method ?? 'unknown'}`;
             } else {
               text = "You didn't share";
             }
@@ -396,61 +508,67 @@ exports.description = "Interface to show iOS' action sheets";
 exports.examples = [
   {
     title: 'Show Action Sheet',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetExample />;
     },
   },
   {
     title: 'Show Action Sheet with tinted buttons',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetTintExample />;
     },
   },
   {
     title: 'Show Action Sheet with cancel tinted button',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetCancelButtonTintExample />;
     },
   },
   {
+    title: 'Show Action Sheet with disabled tinted button',
+    render(): React.MixedElement {
+      return <ActionSheetDisabledButtonTintExample />;
+    },
+  },
+  {
     title: 'Show Action Sheet with anchor',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetAnchorExample />;
     },
   },
   {
     title: 'Show Action Sheet with disabled buttons',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetDisabledExample />;
     },
   },
   {
     title: 'Show Action Sheet and automatically dismiss it',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ActionSheetDismissExample />;
     },
   },
   {
     title: 'Show Share Action Sheet',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ShareActionSheetExample url="https://code.facebook.com" />;
     },
   },
   {
     title: 'Share Local Image',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ShareActionSheetExample url="bunny.png" />;
     },
   },
   {
     title: 'Share Screenshot',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ShareScreenshotExample />;
     },
   },
   {
     title: 'Share from Anchor',
-    render(): React.Element<any> {
+    render(): React.MixedElement {
       return <ShareScreenshotAnchorExample />;
     },
   },

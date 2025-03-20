@@ -28,27 +28,25 @@ public interface DevSupportManager : JSExceptionHandler {
   public val redBoxHandler: RedBoxHandler?
   public val sourceMapUrl: String?
   public val sourceUrl: String?
-  public val jSBundleURLForRemoteDebugging: String?
   public val downloadedJSBundleFile: String?
   public val lastErrorTitle: String?
   public val lastErrorStack: Array<StackFrame>?
   public val lastErrorType: ErrorType?
   public val lastErrorCookie: Int
   public val currentActivity: Activity?
+  public val currentReactContext: ReactContext?
 
   public var devSupportEnabled: Boolean
 
-  public fun showNewJavaError(message: String?, e: Throwable?)
+  public fun showNewJavaError(message: String?, e: Throwable)
 
-  public fun addCustomDevOption(optionName: String?, optionHandler: DevOptionHandler?)
+  public fun addCustomDevOption(optionName: String, optionHandler: DevOptionHandler)
 
-  public fun createRootView(appKey: String?): View?
+  public fun createRootView(appKey: String): View?
 
   public fun destroyRootView(rootView: View?)
 
   public fun showNewJSError(message: String?, details: ReadableArray?, errorCookie: Int)
-
-  public fun updateJSError(message: String?, details: ReadableArray?, errorCookie: Int)
 
   public fun hideRedboxDialog()
 
@@ -76,21 +74,19 @@ public interface DevSupportManager : JSExceptionHandler {
 
   public fun setHotModuleReplacementEnabled(isHotModuleReplacementEnabled: Boolean)
 
-  public fun setRemoteJSDebugEnabled(isRemoteJSDebugEnabled: Boolean)
-
   public fun setFpsDebugEnabled(isFpsDebugEnabled: Boolean)
 
   public fun toggleElementInspector()
 
-  public fun downloadBundleResourceFromUrlSync(resourceURL: String, outputFile: File?): File?
+  public fun downloadBundleResourceFromUrlSync(resourceURL: String, outputFile: File): File?
 
-  public fun registerErrorCustomizer(errorCustomizer: ErrorCustomizer?)
+  public fun registerErrorCustomizer(errorCustomizer: ErrorCustomizer)
 
   public fun processErrorCustomizers(
-      errorInfo: Pair<String, Array<StackFrame>>?
-  ): Pair<String, Array<StackFrame>>?
+      errorInfo: Pair<String, Array<StackFrame>>
+  ): Pair<String, Array<StackFrame>>
 
-  public fun setPackagerLocationCustomizer(packagerLocationCustomizer: PackagerLocationCustomizer?)
+  public fun setPackagerLocationCustomizer(packagerLocationCustomizer: PackagerLocationCustomizer)
 
   /**
    * Create the surface delegate that the provided module should use to interact with
@@ -98,7 +94,7 @@ public interface DevSupportManager : JSExceptionHandler {
    * @param moduleName the module name that helps decide which surface it should interact with
    * @return a [SurfaceDelegate] instance
    */
-  public fun createSurfaceDelegate(moduleName: String?): SurfaceDelegate?
+  public fun createSurfaceDelegate(moduleName: String): SurfaceDelegate?
 
   /** Attempt to open the JS debugger on the host machine. */
   public fun openDebugger()
@@ -106,11 +102,14 @@ public interface DevSupportManager : JSExceptionHandler {
   /** Shows the "paused in debugger" overlay with the given message. */
   public fun showPausedInDebuggerOverlay(
       message: String,
-      listener: PausedInDebuggerOverlayCommandListener
+      listener: PausedInDebuggerOverlayCommandListener,
   )
 
   /** Hides the "paused in debugger" overlay, if currently shown. */
   public fun hidePausedInDebuggerOverlay()
+
+  /** Add an option to send to packager when requesting JS bundle. */
+  public fun setAdditionalOptionForPackager(name: String, value: String)
 
   /**
    * The PackagerLocationCustomizer allows you to have a dynamic packager location that is

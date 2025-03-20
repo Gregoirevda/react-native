@@ -7,7 +7,6 @@
 
 package com.facebook.react.fabric.mounting.mountitems;
 
-import static com.facebook.react.fabric.FabricUIManager.ENABLE_FABRIC_LOGS;
 import static com.facebook.react.fabric.FabricUIManager.IS_DEVELOPMENT_ENVIRONMENT;
 import static com.facebook.react.fabric.mounting.mountitems.FabricNameComponentMapping.getFabricComponentName;
 
@@ -23,6 +22,7 @@ import com.facebook.react.fabric.mounting.SurfaceMountingManager;
 import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags;
 import com.facebook.react.uimanager.StateWrapper;
 import com.facebook.systrace.Systrace;
+import java.util.Locale;
 
 /**
  * This class represents a batch of {@link MountItem}s, represented directly as int buffers to
@@ -52,7 +52,6 @@ final class IntBufferBatchMountItem implements BatchMountItem {
   static final int INSTRUCTION_UPDATE_EVENT_EMITTER = 256;
   static final int INSTRUCTION_UPDATE_PADDING = 512;
   static final int INSTRUCTION_UPDATE_OVERFLOW_INSET = 1024;
-  static final int INSTRUCTION_REMOVE_DELETE_TREE = 2048;
 
   private final int mSurfaceId;
   private final int mCommitNumber;
@@ -75,7 +74,8 @@ final class IntBufferBatchMountItem implements BatchMountItem {
   }
 
   private void beginMarkers(String reason) {
-    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "FabricUIManager::" + reason);
+    Systrace.beginSection(
+        Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "IntBufferBatchMountItem::" + reason);
 
     if (mCommitNumber > 0) {
       ReactMarker.logFabricMarker(
@@ -106,17 +106,24 @@ final class IntBufferBatchMountItem implements BatchMountItem {
       FLog.e(TAG, "Skipping batch of MountItems; was stopped [%d].", mSurfaceId);
       return;
     }
-    if (ENABLE_FABRIC_LOGS) {
+    if (ReactNativeFeatureFlags.enableFabricLogs()) {
       FLog.d(TAG, "Executing IntBufferBatchMountItem on surface [%d]", mSurfaceId);
     }
 
     beginMarkers("mountViews");
-
     int i = 0, j = 0;
     while (i < mIntBufferLen) {
       int rawType = mIntBuffer[i++];
       int type = rawType & ~INSTRUCTION_FLAG_MULTIPLE;
       int numInstructions = ((rawType & INSTRUCTION_FLAG_MULTIPLE) != 0 ? mIntBuffer[i++] : 1);
+
+      String[] args = {"numInstructions", String.valueOf(numInstructions)};
+
+      Systrace.beginSection(
+          Systrace.TRACE_TAG_REACT_JAVA_BRIDGE,
+          "IntBufferBatchMountItem::mountInstructions::" + nameForInstructionString(type),
+          args,
+          args.length);
       for (int k = 0; k < numInstructions; k++) {
         if (type == INSTRUCTION_CREATE) {
           String componentName = getFabricComponentName((String) mObjBuffer[j++]);
@@ -135,9 +142,6 @@ final class IntBufferBatchMountItem implements BatchMountItem {
           surfaceMountingManager.addViewAt(parentTag, tag, mIntBuffer[i++]);
         } else if (type == INSTRUCTION_REMOVE) {
           surfaceMountingManager.removeViewAt(mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]);
-        } else if (type == INSTRUCTION_REMOVE_DELETE_TREE) {
-          surfaceMountingManager.removeDeleteTreeAt(
-              mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]);
         } else if (type == INSTRUCTION_UPDATE_PROPS) {
           surfaceMountingManager.updateProps(mIntBuffer[i++], (ReadableMap) mObjBuffer[j++]);
         } else if (type == INSTRUCTION_UPDATE_STATE) {
@@ -150,15 +154,9 @@ final class IntBufferBatchMountItem implements BatchMountItem {
           int width = mIntBuffer[i++];
           int height = mIntBuffer[i++];
           int displayType = mIntBuffer[i++];
-
-          if (ReactNativeFeatureFlags.setAndroidLayoutDirection()) {
-            int layoutDirection = mIntBuffer[i++];
-            surfaceMountingManager.updateLayout(
-                reactTag, parentTag, x, y, width, height, displayType, layoutDirection);
-          } else {
-            surfaceMountingManager.updateLayout(
-                reactTag, parentTag, x, y, width, height, displayType, 0);
-          }
+          int layoutDirection = mIntBuffer[i++];
+          surfaceMountingManager.updateLayout(
+              reactTag, parentTag, x, y, width, height, displayType, layoutDirection);
         } else if (type == INSTRUCTION_UPDATE_PADDING) {
           surfaceMountingManager.updatePadding(
               mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]);
@@ -183,8 +181,8 @@ final class IntBufferBatchMountItem implements BatchMountItem {
               "Invalid type argument to IntBufferBatchMountItem: " + type + " at index: " + i);
         }
       }
+      Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
     }
-
     endMarkers();
   }
 
@@ -202,7 +200,7 @@ final class IntBufferBatchMountItem implements BatchMountItem {
   public String toString() {
     try {
       StringBuilder s = new StringBuilder();
-      s.append(String.format("IntBufferBatchMountItem [surface:%d]:\n", mSurfaceId));
+      s.append(String.format(Locale.ROOT, "IntBufferBatchMountItem [surface:%d]:\n", mSurfaceId));
       int i = 0, j = 0;
       while (i < mIntBufferLen) {
         int rawType = mIntBuffer[i++];
@@ -214,45 +212,56 @@ final class IntBufferBatchMountItem implements BatchMountItem {
             j += 3;
             s.append(
                 String.format(
+                    Locale.ROOT,
                     "CREATE [%d] - layoutable:%d - %s\n",
-                    mIntBuffer[i++], mIntBuffer[i++], componentName));
+                    mIntBuffer[i++],
+                    mIntBuffer[i++],
+                    componentName));
           } else if (type == INSTRUCTION_DELETE) {
-            s.append(String.format("DELETE [%d]\n", mIntBuffer[i++]));
+            s.append(String.format(Locale.ROOT, "DELETE [%d]\n", mIntBuffer[i++]));
           } else if (type == INSTRUCTION_INSERT) {
             s.append(
                 String.format(
-                    "INSERT [%d]->[%d] @%d\n", mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]));
+                    Locale.ROOT,
+                    "INSERT [%d]->[%d] @%d\n",
+                    mIntBuffer[i++],
+                    mIntBuffer[i++],
+                    mIntBuffer[i++]));
           } else if (type == INSTRUCTION_REMOVE) {
             s.append(
                 String.format(
-                    "REMOVE [%d]->[%d] @%d\n", mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]));
-          } else if (type == INSTRUCTION_REMOVE_DELETE_TREE) {
-            s.append(
-                String.format(
-                    "REMOVE+DELETE TREE [%d]->[%d] @%d\n",
-                    mIntBuffer[i++], mIntBuffer[i++], mIntBuffer[i++]));
+                    Locale.ROOT,
+                    "REMOVE [%d]->[%d] @%d\n",
+                    mIntBuffer[i++],
+                    mIntBuffer[i++],
+                    mIntBuffer[i++]));
           } else if (type == INSTRUCTION_UPDATE_PROPS) {
             Object props = mObjBuffer[j++];
             String propsString =
                 IS_DEVELOPMENT_ENVIRONMENT
                     ? (props != null ? props.toString() : "<null>")
                     : "<hidden>";
-            s.append(String.format("UPDATE PROPS [%d]: %s\n", mIntBuffer[i++], propsString));
+            s.append(
+                String.format(
+                    Locale.ROOT, "UPDATE PROPS [%d]: %s\n", mIntBuffer[i++], propsString));
           } else if (type == INSTRUCTION_UPDATE_STATE) {
             StateWrapper state = (StateWrapper) mObjBuffer[j++];
             String stateString =
                 IS_DEVELOPMENT_ENVIRONMENT
                     ? (state != null ? state.toString() : "<null>")
                     : "<hidden>";
-            s.append(String.format("UPDATE STATE [%d]: %s\n", mIntBuffer[i++], stateString));
-          } else if (type == INSTRUCTION_UPDATE_LAYOUT) {
-            int reactTag = mIntBuffer[i++];
-            int parentTag = mIntBuffer[i++];
             s.append(
                 String.format(
-                    "UPDATE LAYOUT [%d]->[%d]: x:%d y:%d w:%d h:%d displayType:%d\n",
-                    parentTag,
-                    reactTag,
+                    Locale.ROOT, "UPDATE STATE [%d]: %s\n", mIntBuffer[i++], stateString));
+          } else if (type == INSTRUCTION_UPDATE_LAYOUT) {
+            s.append(
+                String.format(
+                    Locale.ROOT,
+                    "UPDATE LAYOUT [%d]->[%d]: x:%d y:%d w:%d h:%d displayType:%d"
+                        + " layoutDirection:%d\n",
+                    mIntBuffer[i++],
+                    mIntBuffer[i++],
+                    mIntBuffer[i++],
                     mIntBuffer[i++],
                     mIntBuffer[i++],
                     mIntBuffer[i++],
@@ -261,6 +270,7 @@ final class IntBufferBatchMountItem implements BatchMountItem {
           } else if (type == INSTRUCTION_UPDATE_PADDING) {
             s.append(
                 String.format(
+                    Locale.ROOT,
                     "UPDATE PADDING [%d]: top:%d right:%d bottom:%d left:%d\n",
                     mIntBuffer[i++],
                     mIntBuffer[i++],
@@ -270,6 +280,7 @@ final class IntBufferBatchMountItem implements BatchMountItem {
           } else if (type == INSTRUCTION_UPDATE_OVERFLOW_INSET) {
             s.append(
                 String.format(
+                    Locale.ROOT,
                     "UPDATE OVERFLOWINSET [%d]: left:%d top:%d right:%d bottom:%d\n",
                     mIntBuffer[i++],
                     mIntBuffer[i++],
@@ -278,7 +289,7 @@ final class IntBufferBatchMountItem implements BatchMountItem {
                     mIntBuffer[i++]));
           } else if (type == INSTRUCTION_UPDATE_EVENT_EMITTER) {
             j += 1;
-            s.append(String.format("UPDATE EVENTEMITTER [%d]\n", mIntBuffer[i++]));
+            s.append(String.format(Locale.ROOT, "UPDATE EVENTEMITTER [%d]\n", mIntBuffer[i++]));
           } else {
             FLog.e(TAG, "String so far: " + s.toString());
             throw new IllegalArgumentException(
@@ -305,6 +316,32 @@ final class IntBufferBatchMountItem implements BatchMountItem {
       }
 
       return "";
+    }
+  }
+
+  private static String nameForInstructionString(int type) {
+    if (type == INSTRUCTION_CREATE) {
+      return "CREATE";
+    } else if (type == INSTRUCTION_DELETE) {
+      return "DELETE";
+    } else if (type == INSTRUCTION_INSERT) {
+      return "INSERT";
+    } else if (type == INSTRUCTION_REMOVE) {
+      return "REMOVE";
+    } else if (type == INSTRUCTION_UPDATE_PROPS) {
+      return "UPDATE_PROPS";
+    } else if (type == INSTRUCTION_UPDATE_STATE) {
+      return "UPDATE_STATE";
+    } else if (type == INSTRUCTION_UPDATE_LAYOUT) {
+      return "UPDATE_LAYOUT";
+    } else if (type == INSTRUCTION_UPDATE_PADDING) {
+      return "UPDATE_PADDING";
+    } else if (type == INSTRUCTION_UPDATE_OVERFLOW_INSET) {
+      return "UPDATE_OVERFLOW_INSET";
+    } else if (type == INSTRUCTION_UPDATE_EVENT_EMITTER) {
+      return "UPDATE_EVENT_EMITTER";
+    } else {
+      return "UNKNOWN";
     }
   }
 }

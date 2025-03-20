@@ -40,10 +40,6 @@ public class DevSettingsModule(
     devSupportManager.setHotModuleReplacementEnabled(isHotLoadingEnabled)
   }
 
-  override fun setIsDebuggingRemotely(isDebugginRemotelyEnabled: Boolean) {
-    devSupportManager.setRemoteJSDebugEnabled(isDebugginRemotelyEnabled)
-  }
-
   override fun setProfilingEnabled(isProfilingEnabled: Boolean) {
     devSupportManager.setFpsDebugEnabled(isProfilingEnabled)
   }
@@ -59,6 +55,10 @@ public class DevSettingsModule(
       val reactApplicationContext = reactApplicationContextIfActiveOrWarn
       reactApplicationContext?.emitDeviceEvent("didPressMenuItem", data)
     }
+  }
+
+  override fun openDebugger() {
+    devSupportManager.openDebugger()
   }
 
   override fun setIsShakeToShowDevMenuEnabled(enabled: Boolean) {

@@ -26,15 +26,14 @@ class ReactNativeFeatureFlagsOverrides
       const InspectorFlagOverrides& overrides)
       : overrides_(overrides) {}
 
-  bool inspectorEnableCxxInspectorPackagerConnection() override {
-    return overrides_.enableCxxInspectorPackagerConnection.value_or(
-        ReactNativeFeatureFlagsDefaults::
-            inspectorEnableCxxInspectorPackagerConnection());
+  bool fuseboxEnabledRelease() override {
+    return overrides_.fuseboxEnabledRelease.value_or(
+        ReactNativeFeatureFlagsDefaults::fuseboxEnabledRelease());
   }
 
-  bool inspectorEnableModernCDPRegistry() override {
-    return overrides_.enableModernCDPRegistry.value_or(
-        ReactNativeFeatureFlagsDefaults::inspectorEnableModernCDPRegistry());
+  bool fuseboxNetworkInspectionEnabled() override {
+    return overrides_.networkInspectionEnabled.value_or(
+        ReactNativeFeatureFlagsDefaults::fuseboxNetworkInspectionEnabled());
   }
 
  private:

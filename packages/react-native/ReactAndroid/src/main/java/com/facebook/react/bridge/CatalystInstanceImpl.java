@@ -7,6 +7,7 @@
 
 package com.facebook.react.bridge;
 
+import static com.facebook.infer.annotation.Assertions.assertCondition;
 import static com.facebook.infer.annotation.ThreadConfined.UI;
 import static com.facebook.systrace.Systrace.TRACE_TAG_REACT_JAVA_BRIDGE;
 
@@ -25,7 +26,10 @@ import com.facebook.react.bridge.queue.ReactQueueConfigurationImpl;
 import com.facebook.react.bridge.queue.ReactQueueConfigurationSpec;
 import com.facebook.react.common.ReactConstants;
 import com.facebook.react.common.annotations.VisibleForTesting;
-import com.facebook.react.config.ReactFeatureFlags;
+import com.facebook.react.common.annotations.internal.LegacyArchitecture;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogLevel;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogger;
+import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags;
 import com.facebook.react.internal.turbomodule.core.interfaces.TurboModuleRegistry;
 import com.facebook.react.module.annotations.ReactModule;
 import com.facebook.react.turbomodule.core.CallInvokerHolderImpl;
@@ -43,9 +47,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * is built by XReactInstanceManager which is in a different package.
  */
 @DoNotStrip
+@LegacyArchitecture
 public class CatalystInstanceImpl implements CatalystInstance {
   static {
     ReactBridge.staticInit();
+    LegacyArchitectureLogger.assertWhenLegacyArchitectureMinifyingEnabled(
+        "CatalystInstanceImpl", LegacyArchitectureLogLevel.WARNING);
   }
 
   private static final AtomicInteger sNextInstanceIdForTrace = new AtomicInteger(1);
@@ -112,6 +119,8 @@ public class CatalystInstanceImpl implements CatalystInstance {
 
   public native NativeMethodCallInvokerHolderImpl getNativeMethodCallInvokerHolder();
 
+  private @Nullable ReactInstanceManagerInspectorTarget mInspectorTarget;
+
   private CatalystInstanceImpl(
       final ReactQueueConfigurationSpec reactQueueConfigurationSpec,
       final JavaScriptExecutor jsExecutor,
@@ -134,6 +143,7 @@ public class CatalystInstanceImpl implements CatalystInstance {
     mJSExceptionHandler = jSExceptionHandler;
     mNativeModulesQueueThread = mReactQueueConfiguration.getNativeModulesQueueThread();
     mTraceListener = new JSProfilerTraceListener(this);
+    mInspectorTarget = inspectorTarget;
     Systrace.endSection(TRACE_TAG_REACT_JAVA_BRIDGE);
 
     FLog.d(ReactConstants.TAG, "Initializing React Xplat Bridge before initializeBridge");
@@ -146,7 +156,7 @@ public class CatalystInstanceImpl implements CatalystInstance {
         mNativeModulesQueueThread,
         mNativeModuleRegistry.getJavaModules(this),
         mNativeModuleRegistry.getCxxModules(),
-        inspectorTarget);
+        mInspectorTarget);
     FLog.d(ReactConstants.TAG, "Initializing React Xplat Bridge after initializeBridge");
     Systrace.endSection(TRACE_TAG_REACT_JAVA_BRIDGE);
 
@@ -346,6 +356,11 @@ public class CatalystInstanceImpl implements CatalystInstance {
       return;
     }
 
+    if (mInspectorTarget != null) {
+      assertCondition(
+          mInspectorTarget.isValid(),
+          "ReactInstanceManager inspector target destroyed before instance was unregistered");
+    }
     unregisterFromInspector();
 
     // TODO: tell all APIs to shut down
@@ -450,7 +465,7 @@ public class CatalystInstanceImpl implements CatalystInstance {
   }
 
   private TurboModuleRegistry getTurboModuleRegistry() {
-    if (ReactFeatureFlags.useTurboModules) {
+    if (ReactNativeFeatureFlags.useTurboModules()) {
       return Assertions.assertNotNull(
           mTurboModuleRegistry,
           "TurboModules are enabled, but mTurboModuleRegistry hasn't been set.");

@@ -23,8 +23,8 @@ import com.facebook.react.bridge.UIManager;
 import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.common.annotations.FrameworkAPI;
 import com.facebook.react.common.annotations.UnstableReactNativeAPI;
-import com.facebook.react.config.ReactFeatureFlags;
 import com.facebook.react.devsupport.interfaces.DevSupportManager;
+import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags;
 import com.facebook.react.modules.core.DefaultHardwareBackBtnHandler;
 import com.facebook.react.turbomodule.core.interfaces.CallInvokerHolder;
 import com.facebook.react.uimanager.events.EventDispatcher;
@@ -52,7 +52,7 @@ class BridgelessReactContext extends ReactApplicationContext implements EventDis
   BridgelessReactContext(Context context, ReactHostImpl host) {
     super(context);
     mReactHost = host;
-    if (ReactFeatureFlags.unstable_useFabricInterop) {
+    if (ReactNativeFeatureFlags.useFabricInterop()) {
       initializeInteropModules();
     }
   }
@@ -148,6 +148,8 @@ class BridgelessReactContext extends ReactApplicationContext implements EventDis
         && mInteropModuleRegistry.shouldReturnInteropModule(jsInterface)) {
       return mInteropModuleRegistry.getInteropModule(jsInterface);
     }
+
+    // TODO T189052462: ReactContext caches JavaScriptModule instances
     JavaScriptModule interfaceProxy =
         (JavaScriptModule)
             Proxy.newProxyInstance(
@@ -155,6 +157,13 @@ class BridgelessReactContext extends ReactApplicationContext implements EventDis
                 new Class[] {jsInterface},
                 new BridgelessJSModuleInvocationHandler(mReactHost, jsInterface));
     return (T) interfaceProxy;
+  }
+
+  /** Shortcut RCTDeviceEventEmitter.emit since it's frequently used */
+  @Override
+  public void emitDeviceEvent(String eventName, @Nullable Object args) {
+    mReactHost.callFunctionOnModule(
+        "RCTDeviceEventEmitter", "emit", Arguments.fromJavaArgs(new Object[] {eventName, args}));
   }
 
   @Override
@@ -170,6 +179,11 @@ class BridgelessReactContext extends ReactApplicationContext implements EventDis
   @Override
   public @Nullable <T extends NativeModule> T getNativeModule(Class<T> nativeModuleInterface) {
     return mReactHost.getNativeModule(nativeModuleInterface);
+  }
+
+  @Override
+  public @Nullable NativeModule getNativeModule(String name) {
+    return mReactHost.getNativeModule(name);
   }
 
   @Override

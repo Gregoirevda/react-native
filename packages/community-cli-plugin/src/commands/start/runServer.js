@@ -14,14 +14,12 @@ import type {Reporter} from 'metro/src/lib/reporting';
 import type {TerminalReportableEvent} from 'metro/src/lib/TerminalReporter';
 import typeof TerminalReporter from 'metro/src/lib/TerminalReporter';
 
+import createDevMiddlewareLogger from '../../utils/createDevMiddlewareLogger';
 import isDevServerRunning from '../../utils/isDevServerRunning';
 import loadMetroConfig from '../../utils/loadMetroConfig';
+import * as version from '../../utils/version';
 import attachKeyHandlers from './attachKeyHandlers';
-import {
-  createDevServerMiddleware,
-  indexPageMiddleware,
-} from '@react-native-community/cli-server-api';
-import {logger, version} from '@react-native-community/cli-tools';
+import {createDevServerMiddleware} from './middleware';
 import {createDevMiddleware} from '@react-native/dev-middleware';
 import chalk from 'chalk';
 import Metro from 'metro';
@@ -33,8 +31,7 @@ export type StartCommandArgs = {
   assetPlugins?: string[],
   cert?: string,
   customLogReporterPath?: string,
-  experimentalDebugger: boolean,
-  host: string,
+  host?: string,
   https?: boolean,
   maxWorkers?: number,
   key?: string,
@@ -47,48 +44,52 @@ export type StartCommandArgs = {
   config?: string,
   projectRoot?: string,
   interactive: boolean,
+  clientLogs: boolean,
 };
 
 async function runServer(
   _argv: Array<string>,
-  ctx: Config,
+  cliConfig: Config,
   args: StartCommandArgs,
 ) {
-  const metroConfig = await loadMetroConfig(ctx, {
+  const metroConfig = await loadMetroConfig(cliConfig, {
     config: args.config,
     maxWorkers: args.maxWorkers,
-    port: args.port ?? 8081,
+    port: args.port,
     resetCache: args.resetCache,
     watchFolders: args.watchFolders,
     projectRoot: args.projectRoot,
     sourceExts: args.sourceExts,
   });
+  const hostname = args.host?.length ? args.host : 'localhost';
   const {
     projectRoot,
     server: {port},
     watchFolders,
   } = metroConfig;
   const protocol = args.https === true ? 'https' : 'http';
-  const devServerUrl = url.format({protocol, hostname: args.host, port});
+  const devServerUrl = url.format({protocol, hostname, port});
 
-  logger.info(`Welcome to React Native v${ctx.reactNativeVersion}`);
+  console.info(
+    chalk.blue(`\nWelcome to React Native v${cliConfig.reactNativeVersion}`),
+  );
 
   const serverStatus = await isDevServerRunning(devServerUrl, projectRoot);
 
   if (serverStatus === 'matched_server_running') {
-    logger.info(
+    console.info(
       `A dev server is already running for this project on port ${port}. Exiting.`,
     );
     return;
   } else if (serverStatus === 'port_taken') {
-    logger.error(
-      `Another process is running on port ${port}. Please terminate this ` +
+    console.error(
+      `${chalk.red('error')}: Another process is running on port ${port}. Please terminate this ` +
         'process and try again, or use another port with "--port".',
     );
     return;
   }
 
-  logger.info(`Starting dev server on port ${chalk.bold(String(port))}...`);
+  console.info(`Starting dev server on ${devServerUrl}\n`);
 
   if (args.assetPlugins) {
     // $FlowIgnore[cannot-write] Assigning to readonly property
@@ -96,6 +97,16 @@ async function runServer(
       require.resolve(plugin),
     );
   }
+  // TODO(T214991636): Remove legacy Metro log forwarding
+  if (!args.clientLogs) {
+    // $FlowIgnore[cannot-write] Assigning to readonly property
+    metroConfig.server.forwardClientLogs = false;
+  }
+
+  let reportEvent: (event: TerminalReportableEvent) => void;
+  const terminal = new Terminal(process.stdout);
+  const ReporterImpl = getReporterImpl(args.customLogReporterPath);
+  const terminalReporter = new ReporterImpl(terminal);
 
   const {
     middleware: communityMiddleware,
@@ -103,24 +114,16 @@ async function runServer(
     messageSocketEndpoint,
     eventsSocketEndpoint,
   } = createDevServerMiddleware({
-    host: args.host,
+    host: hostname,
     port,
     watchFolders,
   });
   const {middleware, websocketEndpoints} = createDevMiddleware({
     projectRoot,
     serverBaseUrl: devServerUrl,
-    logger,
-    unstable_experiments: {
-      // NOTE: Only affects the /open-debugger endpoint
-      enableNewDebugger: args.experimentalDebugger,
-    },
+    logger: createDevMiddlewareLogger(terminalReporter),
   });
 
-  let reportEvent: (event: TerminalReportableEvent) => void;
-  const terminal = new Terminal(process.stdout);
-  const ReporterImpl = getReporterImpl(args.customLogReporterPath);
-  const terminalReporter = new ReporterImpl(terminal);
   const reporter: Reporter = {
     update(event: TerminalReportableEvent) {
       terminalReporter.update(event);
@@ -128,12 +131,15 @@ async function runServer(
         reportEvent(event);
       }
       if (args.interactive && event.type === 'initialize_done') {
-        logger.info('Dev server ready');
+        terminalReporter.update({
+          type: 'unstable_server_log',
+          level: 'info',
+          data: `Dev server ready. ${chalk.dim('Press Ctrl+C to exit.')}`,
+        });
         attachKeyHandlers({
-          cliConfig: ctx,
           devServerUrl,
           messageSocket: messageSocketEndpoint,
-          experimentalDebuggerFrontend: args.experimentalDebugger,
+          reporter: terminalReporter,
         });
       }
     },
@@ -146,11 +152,7 @@ async function runServer(
     secure: args.https,
     secureCert: args.cert,
     secureKey: args.key,
-    unstable_extraMiddleware: [
-      communityMiddleware,
-      indexPageMiddleware,
-      middleware,
-    ],
+    unstable_extraMiddleware: [communityMiddleware, middleware],
     websocketEndpoints: {
       ...communityWebsocketEndpoints,
       ...websocketEndpoints,
@@ -171,7 +173,7 @@ async function runServer(
   //
   serverInstance.keepAliveTimeout = 30000;
 
-  await version.logIfUpdateAvailable(ctx.root);
+  await version.logIfUpdateAvailable(cliConfig, terminalReporter);
 }
 
 function getReporterImpl(customLogReporterPath?: string): TerminalReporter {

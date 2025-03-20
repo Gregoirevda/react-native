@@ -10,24 +10,36 @@
 
 import * as React from 'react';
 
+const {create, unmount, update} = require('../../../jest/renderer');
 const {PlatformColor} = require('../../StyleSheet/PlatformColorValueTypes');
 let Animated = require('../Animated').default;
 const AnimatedProps = require('../nodes/AnimatedProps').default;
 const TestRenderer = require('react-test-renderer');
 
-jest.mock('../../BatchedBridge/NativeModules', () => ({
-  NativeAnimatedModule: {},
-  PlatformConstants: {
-    getConstants() {
-      return {};
-    },
-  },
-}));
+// WORKAROUND: `jest.runAllTicks` skips tasks scheduled w/ `queueMicrotask`.
+function mockQueueMicrotask() {
+  let queueMicrotask;
+  beforeEach(() => {
+    queueMicrotask = global.queueMicrotask;
+    // $FlowIgnore[cannot-write]
+    global.queueMicrotask = process.nextTick;
+  });
+  afterEach(() => {
+    // $FlowIgnore[cannot-write]
+    global.queueMicrotask = queueMicrotask;
+  });
+}
 
-describe('Animated tests', () => {
+describe('Animated', () => {
+  let ReactNativeFeatureFlags;
+
   beforeEach(() => {
     jest.resetModules();
+
+    ReactNativeFeatureFlags = require('../../../src/private/featureflags/ReactNativeFeatureFlags');
   });
+
+  mockQueueMicrotask();
 
   describe('Animated', () => {
     it('works end to end', () => {
@@ -101,25 +113,33 @@ describe('Animated tests', () => {
       expect(callback.mock.calls.length).toBe(1);
     });
 
-    it('does not detach on updates', () => {
+    it('does not detach on updates', async () => {
+      ReactNativeFeatureFlags.override({
+        scheduleAnimatedCleanupInMicrotask: () => false,
+      });
+
       const opacity = new Animated.Value(0);
       opacity.__detach = jest.fn();
 
-      const root = TestRenderer.create(<Animated.View style={{opacity}} />);
+      const root = await create(<Animated.View style={{opacity}} />);
       expect(opacity.__detach).not.toBeCalled();
 
-      root.update(<Animated.View style={{opacity}} />);
+      await update(root, <Animated.View style={{opacity}} />);
       expect(opacity.__detach).not.toBeCalled();
 
-      root.unmount();
+      await unmount(root);
       expect(opacity.__detach).toBeCalled();
     });
 
-    it('stops animation when detached', () => {
+    it('stops animation when detached', async () => {
+      ReactNativeFeatureFlags.override({
+        scheduleAnimatedCleanupInMicrotask: () => false,
+      });
+
       const opacity = new Animated.Value(0);
       const callback = jest.fn();
 
-      const root = TestRenderer.create(<Animated.View style={{opacity}} />);
+      const root = await create(<Animated.View style={{opacity}} />);
 
       Animated.timing(opacity, {
         toValue: 10,
@@ -127,8 +147,91 @@ describe('Animated tests', () => {
         useNativeDriver: false,
       }).start(callback);
 
-      root.unmount();
+      await unmount(root);
 
+      expect(callback).toBeCalledWith({finished: false});
+    });
+
+    it('detaches only on unmount (in a microtask)', async () => {
+      ReactNativeFeatureFlags.override({
+        scheduleAnimatedCleanupInMicrotask: () => true,
+      });
+
+      const opacity = new Animated.Value(0);
+      opacity.__detach = jest.fn();
+
+      const root = await create(<Animated.View style={{opacity}} />);
+      expect(opacity.__detach).not.toBeCalled();
+
+      await update(root, <Animated.View style={{opacity}} />);
+      expect(opacity.__detach).not.toBeCalled();
+      jest.runAllTicks();
+      expect(opacity.__detach).not.toBeCalled();
+
+      await unmount(root);
+      expect(opacity.__detach).not.toBeCalled();
+      jest.runAllTicks();
+      expect(opacity.__detach).toBeCalled();
+    });
+
+    it('restores default values only on update (in a microtask)', async () => {
+      ReactNativeFeatureFlags.override({
+        scheduleAnimatedCleanupInMicrotask: () => true,
+      });
+
+      const __restoreDefaultValues = jest.spyOn(
+        AnimatedProps.prototype,
+        '__restoreDefaultValues',
+      );
+
+      try {
+        const opacityA = new Animated.Value(0);
+        const root = await create(
+          <Animated.View style={{opacity: opacityA}} />,
+        );
+        expect(__restoreDefaultValues).not.toBeCalled();
+
+        const opacityB = new Animated.Value(0);
+        await update(root, <Animated.View style={{opacity: opacityB}} />);
+        expect(__restoreDefaultValues).not.toBeCalled();
+        jest.runAllTicks();
+        expect(__restoreDefaultValues).toBeCalledTimes(1);
+
+        const opacityC = new Animated.Value(0);
+        await update(root, <Animated.View style={{opacity: opacityC}} />);
+        expect(__restoreDefaultValues).toBeCalledTimes(1);
+        jest.runAllTicks();
+        expect(__restoreDefaultValues).toBeCalledTimes(2);
+
+        await unmount(root);
+        expect(__restoreDefaultValues).toBeCalledTimes(2);
+        jest.runAllTicks();
+        expect(__restoreDefaultValues).toBeCalledTimes(2);
+      } finally {
+        __restoreDefaultValues.mockRestore();
+      }
+    });
+
+    it('stops animation when detached (in a microtask)', async () => {
+      ReactNativeFeatureFlags.override({
+        scheduleAnimatedCleanupInMicrotask: () => true,
+      });
+
+      const opacity = new Animated.Value(0);
+      const callback = jest.fn();
+
+      const root = await create(<Animated.View style={{opacity}} />);
+
+      Animated.timing(opacity, {
+        toValue: 10,
+        duration: 1000,
+        useNativeDriver: false,
+      }).start(callback);
+
+      await unmount(root);
+
+      expect(callback).not.toBeCalled();
+      jest.runAllTicks();
       expect(callback).toBeCalledWith({finished: false});
     });
 
@@ -165,12 +268,10 @@ describe('Animated tests', () => {
       expect(JSON.stringify(new Animated.Value(10))).toBe('10');
     });
 
-    it('bypasses `setNativeProps` in test environments', () => {
+    it('bypasses `setNativeProps` in test environments', async () => {
       const opacity = new Animated.Value(0);
 
-      const testRenderer = TestRenderer.create(
-        <Animated.View style={{opacity}} />,
-      );
+      const testRenderer = await create(<Animated.View style={{opacity}} />);
 
       expect(testRenderer.toJSON().props.style.opacity).toEqual(0);
 
@@ -198,6 +299,45 @@ describe('Animated tests', () => {
         'Animated: `useNativeDriver` was not specified. This is a required option and must be explicitly set to `true` or `false`',
       );
       console.warn.mockRestore();
+    });
+
+    it('throws if `useNativeDriver` is incompatible with AnimatedValue', () => {
+      const value = new Animated.Value(0);
+      value.__makeNative();
+
+      const animation = Animated.spring(value, {
+        toValue: 0,
+        velocity: 0,
+        useNativeDriver: false,
+      });
+
+      expect(() => {
+        animation.start();
+      }).toThrow(
+        'Attempting to run JS driven animation on animated node that has ' +
+          'been moved to "native" earlier by starting an animation with ' +
+          '`useNativeDriver: true`',
+      );
+    });
+
+    it('synchronously throws on `useNativeDriver` incompatibility', () => {
+      const value = new Animated.Value(0);
+      value.__makeNative();
+
+      const animation = Animated.spring(value, {
+        delay: 100, // Even with a non-zero delay, error throws synchronously.
+        toValue: 0,
+        velocity: 0,
+        useNativeDriver: false,
+      });
+
+      expect(() => {
+        animation.start();
+      }).toThrow(
+        'Attempting to run JS driven animation on animated node that has ' +
+          'been moved to "native" earlier by starting an animation with ' +
+          '`useNativeDriver: true`',
+      );
     });
   });
 
@@ -263,6 +403,50 @@ describe('Animated tests', () => {
       anim1.start.mock.calls[0][0]({finished: false});
 
       expect(cb).toBeCalledWith({finished: false});
+    });
+
+    it('supports restarting sequence after it was stopped during execution', () => {
+      const anim1 = {start: jest.fn(), stop: jest.fn()};
+      const anim2 = {start: jest.fn(), stop: jest.fn()};
+      const cb = jest.fn();
+
+      const seq = Animated.sequence([anim1, anim2]);
+
+      seq.start(cb);
+
+      anim1.start.mock.calls[0][0]({finished: true});
+      seq.stop();
+
+      // anim1 should be finished so anim2 should also start
+      expect(anim1.start).toHaveBeenCalledTimes(1);
+      expect(anim2.start).toHaveBeenCalledTimes(1);
+
+      seq.start(cb);
+
+      // after restart the sequence should resume from the anim2
+      expect(anim1.start).toHaveBeenCalledTimes(1);
+      expect(anim2.start).toHaveBeenCalledTimes(2);
+    });
+
+    it('supports restarting sequence after it was finished without a reset', () => {
+      const anim1 = {start: jest.fn(), stop: jest.fn()};
+      const anim2 = {start: jest.fn(), stop: jest.fn()};
+      const cb = jest.fn();
+
+      const seq = Animated.sequence([anim1, anim2]);
+
+      seq.start(cb);
+      anim1.start.mock.calls[0][0]({finished: true});
+      anim2.start.mock.calls[0][0]({finished: true});
+
+      // sequence should be finished
+      expect(cb).toBeCalledWith({finished: true});
+
+      seq.start(cb);
+
+      // sequence should successfully restart from the anim1
+      expect(anim1.start).toHaveBeenCalledTimes(2);
+      expect(anim2.start).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -506,6 +690,28 @@ describe('Animated tests', () => {
     expect(cb).not.toBeCalled();
   });
 
+  it('restarts sequence normally in a loop if resetBeforeIteration is false', () => {
+    const anim1 = {start: jest.fn(), stop: jest.fn()};
+    const anim2 = {start: jest.fn(), stop: jest.fn()};
+    const seq = Animated.sequence([anim1, anim2]);
+
+    const loop = Animated.loop(seq, {resetBeforeIteration: false});
+
+    loop.start();
+
+    expect(anim1.start).toHaveBeenCalledTimes(1);
+
+    anim1.start.mock.calls[0][0]({finished: true});
+
+    expect(anim2.start).toHaveBeenCalledTimes(1);
+
+    anim2.start.mock.calls[0][0]({finished: true});
+
+    // after anim2 is finished, the sequence is finished,
+    // hence the loop iteration is finished, so the next iteration starts
+    expect(anim1.start).toHaveBeenCalledTimes(2);
+  });
+
   describe('Animated Parallel', () => {
     it('works with an empty parallel', () => {
       const cb = jest.fn();
@@ -698,7 +904,8 @@ describe('Animated tests', () => {
     beforeEach(() => {
       jest.mock('../../Interaction/InteractionManager');
       Animated = require('../Animated').default;
-      InteractionManager = require('../../Interaction/InteractionManager');
+      InteractionManager =
+        require('../../Interaction/InteractionManager').default;
     });
 
     afterEach(() => {

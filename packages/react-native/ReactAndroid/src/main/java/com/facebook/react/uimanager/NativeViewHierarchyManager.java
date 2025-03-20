@@ -26,12 +26,16 @@ import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.RetryableMountingLayerException;
 import com.facebook.react.bridge.SoftAssertions;
 import com.facebook.react.bridge.UiThreadUtil;
+import com.facebook.react.common.annotations.internal.LegacyArchitecture;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogLevel;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogger;
 import com.facebook.react.common.build.ReactBuildConfig;
 import com.facebook.react.touch.JSResponderHandler;
 import com.facebook.react.uimanager.layoutanimation.LayoutAnimationController;
 import com.facebook.react.uimanager.layoutanimation.LayoutAnimationListener;
 import com.facebook.systrace.Systrace;
 import com.facebook.systrace.SystraceMessage;
+import com.facebook.yoga.YogaDirection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
@@ -63,7 +67,13 @@ import javax.annotation.concurrent.NotThreadSafe;
  * <p>TODO(5483031): Only dispatch updates when shadow views have changed
  */
 @NotThreadSafe
+@LegacyArchitecture
 public class NativeViewHierarchyManager {
+
+  static {
+    LegacyArchitectureLogger.assertWhenLegacyArchitectureMinifyingEnabled(
+        "NativeViewHierarchyManager", LegacyArchitectureLogLevel.WARNING);
+  }
 
   private static final String TAG = NativeViewHierarchyManager.class.getSimpleName();
   private final boolean DEBUG_MODE = ReactBuildConfig.DEBUG && false;
@@ -77,7 +87,7 @@ public class NativeViewHierarchyManager {
   private final LayoutAnimationController mLayoutAnimator = new LayoutAnimationController();
   private final RectF mBoundingBox = new RectF();
 
-  private boolean mLayoutAnimationEnabled;
+  private volatile boolean mLayoutAnimationEnabled;
   private HashMap<Integer, Set<Integer>> mPendingDeletionsForTag;
 
   public NativeViewHierarchyManager(ViewManagerRegistry viewManagers) {
@@ -153,8 +163,17 @@ public class NativeViewHierarchyManager {
     viewManager.updateExtraData(viewToUpdate, extraData);
   }
 
+  /**
+   * @deprecated Please use {@link #updateLayout(int tag, int x, int y, int width, int height,
+   *     YogaDirection layoutDirection)} instead.
+   */
+  @Deprecated
+  public void updateLayout(int tag, int x, int y, int width, int height) {
+    updateLayout(tag, tag, x, y, width, height, YogaDirection.INHERIT);
+  }
+
   public synchronized void updateLayout(
-      int parentTag, int tag, int x, int y, int width, int height) {
+      int parentTag, int tag, int x, int y, int width, int height, YogaDirection layoutDirection) {
     if (DEBUG_MODE) {
       FLog.d(TAG, "updateLayout[%d]->[%d]: %d %d %d %d", tag, parentTag, x, y, width, height);
     }
@@ -166,6 +185,8 @@ public class NativeViewHierarchyManager {
         .flush();
     try {
       View viewToUpdate = resolveView(tag);
+
+      viewToUpdate.setLayoutDirection(LayoutDirectionUtil.toAndroidFromYoga(layoutDirection));
 
       // Even though we have exact dimensions, we still call measure because some platform views
       // (e.g.
@@ -231,7 +252,7 @@ public class NativeViewHierarchyManager {
   }
 
   @Nullable
-  public long getInstanceHandle(int reactTag) {
+  public synchronized long getInstanceHandle(int reactTag) {
     View view = mTagsToViews.get(reactTag);
     if (view == null) {
       throw new IllegalViewOperationException("Unable to find view for tag: " + reactTag);
@@ -659,6 +680,9 @@ public class NativeViewHierarchyManager {
     View rootView = mTagsToViews.get(rootViewTag);
     dropView(rootView);
     mRootTags.delete(rootViewTag);
+    if (rootView != null) {
+      rootView.setId(View.NO_ID);
+    }
   }
 
   /**
@@ -799,15 +823,16 @@ public class NativeViewHierarchyManager {
     mJSResponderHandler.setJSResponder(initialReactTag, view.getParent());
   }
 
-  public void clearJSResponder() {
+  public synchronized void clearJSResponder() {
     mJSResponderHandler.clearJSResponder();
   }
 
-  void configureLayoutAnimation(final ReadableMap config, final Callback onAnimationComplete) {
+  synchronized void configureLayoutAnimation(
+      final ReadableMap config, final Callback onAnimationComplete) {
     mLayoutAnimator.initializeFromConfig(config, onAnimationComplete);
   }
 
-  void clearLayoutAnimation() {
+  synchronized void clearLayoutAnimation() {
     mLayoutAnimator.reset();
   }
 
@@ -870,7 +895,7 @@ public class NativeViewHierarchyManager {
     return (ThemedReactContext) view.getContext();
   }
 
-  public void sendAccessibilityEvent(int tag, int eventType) {
+  public synchronized void sendAccessibilityEvent(int tag, int eventType) {
     View view = mTagsToViews.get(tag);
     if (view == null) {
       throw new RetryableMountingLayerException("Could not find view with tag " + tag);

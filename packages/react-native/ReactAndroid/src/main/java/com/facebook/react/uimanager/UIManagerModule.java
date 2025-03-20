@@ -39,6 +39,9 @@ import com.facebook.react.bridge.UiThreadUtil;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.common.MapBuilder;
 import com.facebook.react.common.ReactConstants;
+import com.facebook.react.common.annotations.internal.LegacyArchitecture;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogLevel;
+import com.facebook.react.common.annotations.internal.LegacyArchitectureLogger;
 import com.facebook.react.module.annotations.ReactModule;
 import com.facebook.react.uimanager.common.ViewUtil;
 import com.facebook.react.uimanager.debug.NotThreadSafeViewHierarchyUpdateDebugListener;
@@ -82,8 +85,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Don't dispatch the view hierarchy at the end of a batch if no UI changes occurred
  */
 @ReactModule(name = UIManagerModule.NAME)
+@LegacyArchitecture
 public class UIManagerModule extends ReactContextBaseJavaModule
     implements OnBatchCompleteListener, LifecycleEventListener, UIManager {
+  static {
+    LegacyArchitectureLogger.assertWhenLegacyArchitectureMinifyingEnabled(
+        "UIManagerModule", LegacyArchitectureLogLevel.WARNING);
+  }
+
   public static final String TAG = UIManagerModule.class.getSimpleName();
 
   /** Resolves a name coming from native side to a name of the event that is exposed to JS. */
@@ -118,7 +127,7 @@ public class UIManagerModule extends ReactContextBaseJavaModule
     DisplayMetricsHolder.initDisplayMetricsIfNotInitialized(reactContext);
     mEventDispatcher = new EventDispatcherImpl(reactContext);
     mModuleConstants = createConstants(viewManagerResolver);
-    mCustomDirectEvents = UIManagerModuleConstants.getDirectEventTypeConstants();
+    mCustomDirectEvents = UIManagerModuleConstants.directEventTypeConstants;
     mViewManagerRegistry = new ViewManagerRegistry(viewManagerResolver);
     mUIImplementation =
         new UIImplementation(
@@ -205,6 +214,16 @@ public class UIManagerModule extends ReactContextBaseJavaModule
     reactApplicationContext.unregisterComponentCallbacks(mViewManagerRegistry);
     YogaNodePool.get().clear();
     ViewManagerPropertyUpdater.clear();
+  }
+
+  @Override
+  public void markActiveTouchForTag(int surfaceId, int reactTag) {
+    // Not implemented for Paper.
+  }
+
+  @Override
+  public void sweepActiveTouchForTag(int surfaceId, int reactTag) {
+    // Not implemented for Paper.
   }
 
   /**
@@ -388,6 +407,12 @@ public class UIManagerModule extends ReactContextBaseJavaModule
     getReactApplicationContext().assertOnNativeModulesQueueThread();
 
     mUIImplementation.updateNodeSize(nodeViewTag, newWidth, newHeight);
+  }
+
+  public void updateInsetsPadding(int nodeViewTag, int top, int left, int bottom, int right) {
+    getReactApplicationContext().assertOnNativeModulesQueueThread();
+
+    mUIImplementation.updateInsetsPadding(nodeViewTag, top, left, bottom, right);
   }
 
   /**
@@ -671,6 +696,8 @@ public class UIManagerModule extends ReactContextBaseJavaModule
     }
   }
 
+  // NOTE: When converted to Kotlin this method should be `internal` due to
+  // visibility restriction for `NotThreadSafeViewHierarchyUpdateDebugListener`
   public void setViewHierarchyUpdateDebugListener(
       @Nullable NotThreadSafeViewHierarchyUpdateDebugListener listener) {
     mUIImplementation.setViewHierarchyUpdateDebugListener(listener);

@@ -7,13 +7,15 @@
 
 package com.facebook.react.devsupport;
 
+import android.content.Context;
 import android.net.Uri;
 import android.os.AsyncTask;
-import android.provider.Settings;
+import android.provider.Settings.Secure;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.facebook.common.logging.FLog;
 import com.facebook.infer.annotation.Assertions;
+import com.facebook.infer.annotation.Nullsafe;
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.common.ReactConstants;
 import com.facebook.react.devsupport.interfaces.DevBundleDownloadListener;
@@ -26,7 +28,6 @@ import com.facebook.react.packagerconnection.NotificationOnlyHandler;
 import com.facebook.react.packagerconnection.PackagerConnectionSettings;
 import com.facebook.react.packagerconnection.ReconnectingWebSocket.ConnectionCallback;
 import com.facebook.react.packagerconnection.RequestHandler;
-import com.facebook.react.packagerconnection.RequestOnlyHandler;
 import com.facebook.react.packagerconnection.Responder;
 import com.facebook.react.util.RNLog;
 import java.io.File;
@@ -59,9 +60,8 @@ import okio.Sink;
  *   <li>Genymotion emulator with default settings: 10.0.3.2
  * </ul>
  */
+@Nullsafe(Nullsafe.Mode.LOCAL)
 public class DevServerHelper {
-  public static final String RELOAD_APP_EXTRA_JS_PROXY = "jsproxy";
-
   private static final int HTTP_CONNECT_TIMEOUT_MS = 5000;
 
   private static final String DEBUGGER_MSG_DISABLE = "{ \"id\":1,\"method\":\"Debugger.disable\" }";
@@ -75,7 +75,8 @@ public class DevServerHelper {
 
     void onPackagerDevMenuCommand();
 
-    void onCaptureHeapCommand(final Responder responder);
+    @Deprecated(forRemoval = true)
+    default void onCaptureHeapCommand(final Responder responder) {}
 
     // Allow apps to provide listeners for custom packager commands.
     @Nullable
@@ -104,6 +105,7 @@ public class DevServerHelper {
   private final OkHttpClient mClient;
   private final BundleDownloader mBundleDownloader;
   private final PackagerStatusCheck mPackagerStatusCheck;
+  private final Context mApplicationContext;
   private final String mPackageName;
 
   private @Nullable JSPackagerClient mPackagerClient;
@@ -111,7 +113,7 @@ public class DevServerHelper {
 
   public DevServerHelper(
       DeveloperSettings developerSettings,
-      String packageName,
+      Context applicationContext,
       PackagerConnectionSettings packagerConnectionSettings) {
     mSettings = developerSettings;
     mPackagerConnectionSettings = packagerConnectionSettings;
@@ -123,7 +125,8 @@ public class DevServerHelper {
             .build();
     mBundleDownloader = new BundleDownloader(mClient);
     mPackagerStatusCheck = new PackagerStatusCheck(mClient);
-    mPackageName = packageName;
+    mApplicationContext = applicationContext;
+    mPackageName = applicationContext.getPackageName();
   }
 
   public void openPackagerConnection(
@@ -150,14 +153,6 @@ public class DevServerHelper {
               @Override
               public void onNotification(@Nullable Object params) {
                 commandListener.onPackagerDevMenuCommand();
-              }
-            });
-        handlers.put(
-            "captureHeap",
-            new RequestOnlyHandler() {
-              @Override
-              public void onRequest(@Nullable Object params, Responder responder) {
-                commandListener.onCaptureHeapCommand(responder);
               }
             });
         Map<String, RequestHandler> customHandlers = commandListener.customCommandHandlers();
@@ -210,13 +205,15 @@ public class DevServerHelper {
     new AsyncTask<Void, Void, Void>() {
       @Override
       protected Void doInBackground(Void... params) {
-        if (InspectorFlags.getEnableCxxInspectorPackagerConnection()) {
-          mInspectorPackagerConnection =
-              new CxxInspectorPackagerConnection(getInspectorDeviceUrl(), mPackageName);
-        } else {
-          mInspectorPackagerConnection =
-              new InspectorPackagerConnection(getInspectorDeviceUrl(), mPackageName);
+        Map<String, String> metadata =
+            AndroidInfoHelpers.getInspectorHostMetadata(mApplicationContext);
+        String deviceName = metadata.get("deviceName");
+        if (deviceName == null) {
+          FLog.w(ReactConstants.TAG, "Could not get device name from Inspector Host Metadata.");
+          return null;
         }
+        mInspectorPackagerConnection =
+            new CxxInspectorPackagerConnection(getInspectorDeviceUrl(), deviceName, mPackageName);
         mInspectorPackagerConnection.connect();
         return null;
       }
@@ -301,7 +298,8 @@ public class DevServerHelper {
     // * randomly generated when the user first sets up the device and should remain constant for
     // the lifetime of the user's device (API level < 26).
     // [Source: Android docs]
-    String androidId = Settings.Secure.ANDROID_ID;
+    String androidId =
+        Secure.getString(mApplicationContext.getContentResolver(), Secure.ANDROID_ID);
 
     String rawDeviceId =
         String.format(
@@ -309,7 +307,7 @@ public class DevServerHelper {
             "android-%s-%s-%s",
             packageName,
             androidId,
-            InspectorFlags.getEnableModernCDPRegistry() ? "fusebox" : "legacy");
+            InspectorFlags.getFuseboxEnabled() ? "fusebox" : "legacy");
 
     return getSHA256(rawDeviceId);
   }
@@ -317,18 +315,19 @@ public class DevServerHelper {
   private String getInspectorDeviceUrl() {
     return String.format(
         Locale.US,
-        "http://%s/inspector/device?name=%s&app=%s&device=%s",
+        "http://%s/inspector/device?name=%s&app=%s&device=%s&profiling=%b",
         mPackagerConnectionSettings.getDebugServerHost(),
         Uri.encode(AndroidInfoHelpers.getFriendlyDeviceName()),
         Uri.encode(mPackageName),
-        Uri.encode(getInspectorDeviceId()));
+        Uri.encode(getInspectorDeviceId()),
+        InspectorFlags.getIsProfilingBuild());
   }
 
   public void downloadBundleFromURL(
       DevBundleDownloadListener callback,
       File outputFile,
       String bundleURL,
-      BundleDownloader.BundleInfo bundleInfo) {
+      @Nullable BundleDownloader.BundleInfo bundleInfo) {
     mBundleDownloader.downloadBundleFromURL(callback, outputFile, bundleURL, bundleInfo);
   }
 
@@ -336,7 +335,7 @@ public class DevServerHelper {
       DevBundleDownloadListener callback,
       File outputFile,
       String bundleURL,
-      BundleDownloader.BundleInfo bundleInfo,
+      @Nullable BundleDownloader.BundleInfo bundleInfo,
       Request.Builder requestBuilder) {
     mBundleDownloader.downloadBundleFromURL(
         callback, outputFile, bundleURL, bundleInfo, requestBuilder);
@@ -381,6 +380,14 @@ public class DevServerHelper {
   private String createBundleURL(
       String mainModuleID, BundleType type, String host, boolean modulesOnly, boolean runModule) {
     boolean dev = getDevMode();
+    StringBuilder additionalOptionsBuilder = new StringBuilder();
+    for (Map.Entry<String, String> entry :
+        mPackagerConnectionSettings.getAdditionalOptionsForPackager().entrySet()) {
+      if (entry.getValue().length() == 0) {
+        continue;
+      }
+      additionalOptionsBuilder.append("&" + entry.getKey() + "=" + Uri.encode(entry.getValue()));
+    }
     return String.format(
             Locale.US,
             "http://%s/%s.%s?platform=android&dev=%s&lazy=%s&minify=%s&app=%s&modulesOnly=%s&runModule=%s",
@@ -393,9 +400,8 @@ public class DevServerHelper {
             mPackageName,
             modulesOnly ? "true" : "false",
             runModule ? "true" : "false")
-        + (InspectorFlags.getEnableModernCDPRegistry()
-            ? "&excludeSource=true&sourcePaths=url-server"
-            : "");
+        + (InspectorFlags.getFuseboxEnabled() ? "&excludeSource=true&sourcePaths=url-server" : "")
+        + additionalOptionsBuilder.toString();
   }
 
   private String createBundleURL(String mainModuleID, BundleType type) {
@@ -403,6 +409,11 @@ public class DevServerHelper {
   }
 
   private static String createResourceURL(String host, String resourcePath) {
+    // This is what we get for not using a proper URI library.
+    if (resourcePath.startsWith("/")) {
+      FLog.w(ReactConstants.TAG, "Resource path should not begin with `/`, removing it.");
+      resourcePath = resourcePath.substring(1);
+    }
     return String.format(Locale.US, "http://%s/%s", host, resourcePath);
   }
 
@@ -425,45 +436,12 @@ public class DevServerHelper {
     }
   }
 
-  private String createLaunchJSDevtoolsCommandUrl() {
-    return String.format(
-        Locale.US,
-        "http://%s/launch-js-devtools",
-        mPackagerConnectionSettings.getDebugServerHost());
-  }
-
-  public void launchJSDevtools() {
-    Request request = new Request.Builder().url(createLaunchJSDevtoolsCommandUrl()).build();
-    mClient
-        .newCall(request)
-        .enqueue(
-            new Callback() {
-              @Override
-              public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                // ignore HTTP call response, this is just to open a debugger page and there is no
-                // reason to report failures from here
-              }
-
-              @Override
-              public void onResponse(@NonNull Call call, @NonNull Response response) {
-                // ignore HTTP call response - see above
-              }
-            });
-  }
-
   public String getSourceMapUrl(String mainModuleName) {
     return createBundleURL(mainModuleName, BundleType.MAP);
   }
 
   public String getSourceUrl(String mainModuleName) {
     return createBundleURL(mainModuleName, BundleType.BUNDLE);
-  }
-
-  public String getJSBundleURLForRemoteDebugging(String mainModuleName) {
-    // The host we use when connecting to the JS bundle server from the emulator is not the
-    // same as the one needed to connect to the same server from the JavaScript proxy running on the
-    // host itself.
-    return createBundleURL(mainModuleName, BundleType.BUNDLE, getHostForJSProxy());
   }
 
   /**
@@ -479,7 +457,7 @@ public class DevServerHelper {
     final Request request = new Request.Builder().url(resourceURL).build();
 
     try (Response response = mClient.newCall(request).execute()) {
-      if (!response.isSuccessful()) {
+      if (!response.isSuccessful() || response.body() == null) {
         return null;
       }
 
@@ -505,9 +483,8 @@ public class DevServerHelper {
     String requestUrl =
         String.format(
             Locale.US,
-            "http://%s/open-debugger?appId=%s&device=%s",
+            "http://%s/open-debugger?device=%s",
             mPackagerConnectionSettings.getDebugServerHost(),
-            Uri.encode(mPackageName),
             Uri.encode(getInspectorDeviceId()));
     Request request =
         new Request.Builder().url(requestUrl).method("POST", RequestBody.create(null, "")).build();

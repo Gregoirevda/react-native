@@ -17,39 +17,54 @@ InspectorFlags& InspectorFlags::getInstance() {
   return instance;
 }
 
-bool InspectorFlags::getEnableModernCDPRegistry() const {
-  return loadFlagsAndAssertUnchanged().enableModernCDPRegistry;
+bool InspectorFlags::getFuseboxEnabled() const {
+  if (fuseboxDisabledForTest_) {
+    return false;
+  }
+
+  return loadFlagsAndAssertUnchanged().fuseboxEnabled;
 }
 
-bool InspectorFlags::getEnableCxxInspectorPackagerConnection() const {
-  auto& values = loadFlagsAndAssertUnchanged();
+bool InspectorFlags::getIsProfilingBuild() const {
+  return loadFlagsAndAssertUnchanged().isProfilingBuild;
+}
 
-  return values.enableCxxInspectorPackagerConnection ||
-      // If we are using the modern CDP registry, then we must also use the C++
-      // InspectorPackagerConnection implementation.
-      values.enableModernCDPRegistry;
+bool InspectorFlags::getNetworkInspectionEnabled() const {
+  return loadFlagsAndAssertUnchanged().networkInspectionEnabled;
 }
 
 void InspectorFlags::dangerouslyResetFlags() {
   *this = InspectorFlags{};
 }
 
+void InspectorFlags::dangerouslyDisableFuseboxForTest() {
+  fuseboxDisabledForTest_ = true;
+}
+
+#if defined(REACT_NATIVE_DEBUGGER_ENABLED) && \
+    defined(REACT_NATIVE_DEBUGGER_FORCE_DISABLE)
+#error \
+    "Cannot define both REACT_NATIVE_DEBUGGER_ENABLED and REACT_NATIVE_DEBUGGER_FORCE_DISABLE"
+#endif
+
 const InspectorFlags::Values& InspectorFlags::loadFlagsAndAssertUnchanged()
     const {
   InspectorFlags::Values newValues = {
-      .enableCxxInspectorPackagerConnection =
-#ifdef REACT_NATIVE_FORCE_ENABLE_FUSEBOX
+      .fuseboxEnabled =
+#if defined(REACT_NATIVE_DEBUGGER_ENABLED)
           true,
 #else
-          ReactNativeFeatureFlags::
-              inspectorEnableCxxInspectorPackagerConnection(),
+          ReactNativeFeatureFlags::fuseboxEnabledRelease(),
 #endif
-      .enableModernCDPRegistry =
-#ifdef REACT_NATIVE_FORCE_ENABLE_FUSEBOX
+      .isProfilingBuild =
+#if defined(REACT_NATIVE_DEBUGGER_MODE_PROD)
           true,
 #else
-          ReactNativeFeatureFlags::inspectorEnableModernCDPRegistry(),
+          false,
 #endif
+      .networkInspectionEnabled =
+          ReactNativeFeatureFlags::enableBridgelessArchitecture() &&
+          ReactNativeFeatureFlags::fuseboxNetworkInspectionEnabled(),
   };
 
   if (cachedValues_.has_value() && !inconsistentFlagsStateLogged_) {

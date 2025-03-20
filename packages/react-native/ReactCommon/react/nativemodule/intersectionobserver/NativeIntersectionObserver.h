@@ -19,21 +19,23 @@ using NativeIntersectionObserverIntersectionObserverId = int32_t;
 using RectAsTuple = std::tuple<Float, Float, Float, Float>;
 
 using NativeIntersectionObserverObserveOptions =
-    NativeIntersectionObserverCxxNativeIntersectionObserverObserveOptions<
+    NativeIntersectionObserverNativeIntersectionObserverObserveOptions<
         // intersectionObserverId
         NativeIntersectionObserverIntersectionObserverId,
         // targetShadowNode
         jsi::Object,
         // thresholds
-        std::vector<Float>>;
+        std::vector<Float>,
+        // rootThresholds
+        std::optional<std::vector<Float>>>;
 
 template <>
 struct Bridging<NativeIntersectionObserverObserveOptions>
-    : NativeIntersectionObserverCxxNativeIntersectionObserverObserveOptionsBridging<
+    : NativeIntersectionObserverNativeIntersectionObserverObserveOptionsBridging<
           NativeIntersectionObserverObserveOptions> {};
 
 using NativeIntersectionObserverEntry =
-    NativeIntersectionObserverCxxNativeIntersectionObserverEntry<
+    NativeIntersectionObserverNativeIntersectionObserverEntry<
         // intersectionObserverId
         NativeIntersectionObserverIntersectionObserverId,
         // targetInstanceHandle
@@ -43,7 +45,7 @@ using NativeIntersectionObserverEntry =
         // rootRect
         RectAsTuple,
         // intersectionRect
-        std::optional<RectAsTuple>,
+        RectAsTuple,
         // isIntersectingAboveThresholds
         bool,
         // time
@@ -51,7 +53,7 @@ using NativeIntersectionObserverEntry =
 
 template <>
 struct Bridging<NativeIntersectionObserverEntry>
-    : NativeIntersectionObserverCxxNativeIntersectionObserverEntryBridging<
+    : NativeIntersectionObserverNativeIntersectionObserverEntryBridging<
           NativeIntersectionObserverEntry> {};
 
 class NativeIntersectionObserver

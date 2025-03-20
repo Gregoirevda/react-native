@@ -34,6 +34,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import com.facebook.common.logging.FLog;
 import com.facebook.infer.annotation.Assertions;
+import com.facebook.infer.annotation.Nullsafe;
 import com.facebook.react.R;
 import com.facebook.react.bridge.DefaultJSExceptionHandler;
 import com.facebook.react.bridge.JSBundleLoader;
@@ -61,8 +62,8 @@ import com.facebook.react.devsupport.interfaces.PausedInDebuggerOverlayManager;
 import com.facebook.react.devsupport.interfaces.RedBoxHandler;
 import com.facebook.react.devsupport.interfaces.StackFrame;
 import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
+import com.facebook.react.modules.debug.interfaces.DeveloperSettings;
 import com.facebook.react.packagerconnection.RequestHandler;
-import com.facebook.react.packagerconnection.Responder;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -74,6 +75,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+@Nullsafe(Nullsafe.Mode.LOCAL)
 public abstract class DevSupportManagerBase implements DevSupportManager {
 
   public interface CallbackWithBundleLoader {
@@ -93,7 +95,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   private final BroadcastReceiver mReloadAppBroadcastReceiver;
   private final DevServerHelper mDevServerHelper;
   private final LinkedHashMap<String, DevOptionHandler> mCustomDevOptions = new LinkedHashMap<>();
-  private final ReactInstanceDevHelper mReactInstanceDevHelper;
+  protected final ReactInstanceDevHelper mReactInstanceDevHelper;
   private final @Nullable String mJSAppBundleName;
   private final File mJSBundleDownloadedFile;
   private final File mJSSplitBundlesDir;
@@ -106,8 +108,8 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   private @Nullable DebugOverlayController mDebugOverlayController;
   private boolean mDevLoadingViewVisible = false;
   private int mPendingJSSplitBundleRequests = 0;
-  private @Nullable ReactContext mCurrentContext;
-  private final DevInternalSettings mDevSettings;
+  private @Nullable ReactContext mCurrentReactContext;
+  private final DeveloperSettings mDevSettings;
   private boolean mIsReceiverRegistered = false;
   private boolean mIsShakeDetectorStarted = false;
   private boolean mIsDevSupportEnabled = false;
@@ -143,9 +145,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
     mDevSettings = new DevInternalSettings(applicationContext, this::reloadSettings);
     mDevServerHelper =
         new DevServerHelper(
-            mDevSettings,
-            mApplicationContext.getPackageName(),
-            mDevSettings.getPackagerConnectionSettings());
+            mDevSettings, mApplicationContext, mDevSettings.getPackagerConnectionSettings());
     mBundleDownloadListener = devBundleDownloadListener;
 
     // Prepare shake gesture detector (will be started/stopped from #reload)
@@ -160,12 +160,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
           public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (getReloadAppAction(context).equals(action)) {
-              if (intent.getBooleanExtra(DevServerHelper.RELOAD_APP_EXTRA_JS_PROXY, false)) {
-                mDevSettings.setRemoteJSDebugEnabled(true);
-                mDevServerHelper.launchJSDevtools();
-              } else {
-                mDevSettings.setRemoteJSDebugEnabled(false);
-              }
               handleReloadJS();
             }
           }
@@ -230,8 +224,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
 
     if (e instanceof JavascriptException) {
       FLog.e(ReactConstants.TAG, "Exception in native call from JS", e);
-      showNewError(
-          e.getMessage().toString(), new StackFrame[] {}, JSEXCEPTION_ERROR_COOKIE, ErrorType.JS);
+      showNewError(e.getMessage(), new StackFrame[] {}, JSEXCEPTION_ERROR_COOKIE, ErrorType.JS);
     } else {
       showNewJavaError(message.toString(), e);
     }
@@ -255,7 +248,8 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   @Override
-  public void showNewJSError(String message, ReadableArray details, int errorCookie) {
+  public void showNewJSError(
+      @Nullable String message, @Nullable ReadableArray details, int errorCookie) {
     showNewError(message, StackTraceHelper.convertJsStackTrace(details), errorCookie, ErrorType.JS);
   }
 
@@ -281,26 +275,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   @Override
-  public void updateJSError(
-      final String message, final ReadableArray details, final int errorCookie) {
-    UiThreadUtil.runOnUiThread(
-        () -> {
-          // Since we only show the first JS error in a succession of JS errors, make sure we only
-          // update the error message for that error message. This assumes that updateJSError
-          // belongs to the most recent showNewJSError
-          if ((mRedBoxSurfaceDelegate != null && !mRedBoxSurfaceDelegate.isShowing())
-              || errorCookie != mLastErrorCookie) {
-            return;
-          }
-
-          // The RedBox surface delegate will always show the latest error
-          updateLastErrorInfo(
-              message, StackTraceHelper.convertJsStackTrace(details), errorCookie, ErrorType.JS);
-          mRedBoxSurfaceDelegate.show();
-        });
-  }
-
-  @Override
   public void hideRedboxDialog() {
     if (mRedBoxSurfaceDelegate == null) {
       return;
@@ -313,8 +287,10 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
     return mReactInstanceDevHelper.createRootView(appKey);
   }
 
-  public void destroyRootView(View rootView) {
-    mReactInstanceDevHelper.destroyRootView(rootView);
+  public void destroyRootView(@Nullable View rootView) {
+    if (rootView != null) {
+      mReactInstanceDevHelper.destroyRootView(rootView);
+    }
   }
 
   private void hideDevOptionsDialog() {
@@ -381,15 +357,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
           }
         });
 
-    if (mDevSettings.isRemoteJSDebugEnabled()) {
-      // [Deprecated in React Native 0.73] Remote JS debugging. Handle reload
-      // via external JS executor. This capability will be removed in a future
-      // release.
-      mDevSettings.setRemoteJSDebugEnabled(false);
-      handleReloadJS();
-    }
-
-    if (mDevSettings.isDeviceDebugEnabled() && !mDevSettings.isRemoteJSDebugEnabled()) {
+    if (mDevSettings.isDeviceDebugEnabled()) {
       // On-device JS debugging (CDP). Render action to open debugger frontend.
       boolean isConnected = mIsPackagerConnected;
       String debuggerItemString =
@@ -450,11 +418,11 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
         () -> {
           boolean nextEnabled = !mDevSettings.isHotModuleReplacementEnabled();
           mDevSettings.setHotModuleReplacementEnabled(nextEnabled);
-          if (mCurrentContext != null) {
+          if (mCurrentReactContext != null) {
             if (nextEnabled) {
-              mCurrentContext.getJSModule(HMRClient.class).enable();
+              mCurrentReactContext.getJSModule(HMRClient.class).enable();
             } else {
-              mCurrentContext.getJSModule(HMRClient.class).disable();
+              mCurrentReactContext.getJSModule(HMRClient.class).disable();
             }
           }
           if (nextEnabled && !mDevSettings.isJSDevModeEnabled()) {
@@ -563,12 +531,14 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
             .setOnCancelListener(dialog -> mDevOptionsDialog = null)
             .create();
     mDevOptionsDialog.show();
-    if (mCurrentContext != null) {
-      mCurrentContext.getJSModule(RCTNativeAppEventEmitter.class).emit("RCTDevMenuShown", null);
+    if (mCurrentReactContext != null) {
+      mCurrentReactContext
+          .getJSModule(RCTNativeAppEventEmitter.class)
+          .emit("RCTDevMenuShown", null);
     }
   }
 
-  private String getJSExecutorDescription() {
+  private @Nullable String getJSExecutorDescription() {
     try {
       return getReactInstanceDevHelper().getJavaScriptExecutorFactory().toString();
     } catch (IllegalStateException e) {
@@ -593,7 +563,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   @Override
-  public DevInternalSettings getDevSettings() {
+  public DeveloperSettings getDevSettings() {
     return mDevSettings;
   }
 
@@ -609,11 +579,19 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
 
   @Override
   public void onReactInstanceDestroyed(ReactContext reactContext) {
-    if (reactContext == mCurrentContext) {
+    if (reactContext == mCurrentReactContext) {
       // only call reset context when the destroyed context matches the one that is currently set
       // for this manager
       resetCurrentContext(null);
     }
+
+    // If some JNI types (e.g. jni::HybridClass) are used in JSI (e.g. jsi::HostObject), they might
+    // not be immediately deleted on an app refresh as both Java and JavaScript are
+    // garbage-collected languages and the memory might float around for a while. For C++
+    // developers, this will be hard to debug as destructors might be called at a later point, so in
+    // this case we trigger a Java GC to maybe eagerly collect such objects when the app
+    // reloads.
+    System.gc();
   }
 
   @Override
@@ -635,12 +613,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   @Override
-  public String getJSBundleURLForRemoteDebugging() {
-    return mDevServerHelper.getJSBundleURLForRemoteDebugging(
-        Assertions.assertNotNull(mJSAppBundleName));
-  }
-
-  @Override
   public String getDownloadedJSBundleFile() {
     return mJSBundleDownloadedFile.getAbsolutePath();
   }
@@ -655,18 +627,20 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
     if (mIsDevSupportEnabled && mJSBundleDownloadedFile.exists()) {
       try {
         String packageName = mApplicationContext.getPackageName();
-        PackageInfo thisPackage =
-            mApplicationContext.getPackageManager().getPackageInfo(packageName, 0);
-        if (mJSBundleDownloadedFile.lastModified() > thisPackage.lastUpdateTime) {
-          // Base APK has not been updated since we downloaded JS, but if app is using exopackage
-          // it may only be a single dex that has been updated. We check for exopackage dir update
-          // time in that case.
-          File exopackageDir =
-              new File(String.format(Locale.US, EXOPACKAGE_LOCATION_FORMAT, packageName));
-          if (exopackageDir.exists()) {
-            return mJSBundleDownloadedFile.lastModified() > exopackageDir.lastModified();
+        PackageManager packageManager = mApplicationContext.getPackageManager();
+        if (packageManager != null) {
+          PackageInfo thisPackage = packageManager.getPackageInfo(packageName, 0);
+          if (mJSBundleDownloadedFile.lastModified() > thisPackage.lastUpdateTime) {
+            // Base APK has not been updated since we downloaded JS, but if app is using exopackage
+            // it may only be a single dex that has been updated. We check for exopackage dir update
+            // time in that case.
+            File exopackageDir =
+                new File(String.format(Locale.US, EXOPACKAGE_LOCATION_FORMAT, packageName));
+            if (exopackageDir.exists()) {
+              return mJSBundleDownloadedFile.lastModified() > exopackageDir.lastModified();
+            }
+            return true;
           }
-          return true;
         }
       } catch (PackageManager.NameNotFoundException e) {
         // Ignore this error and just fallback to loading JS from assets
@@ -677,12 +651,12 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   private void resetCurrentContext(@Nullable ReactContext reactContext) {
-    if (mCurrentContext == reactContext) {
+    if (mCurrentReactContext == reactContext) {
       // new context is the same as the old one - do nothing
       return;
     }
 
-    mCurrentContext = reactContext;
+    mCurrentReactContext = reactContext;
 
     // Recreate debug overlay controller with new CatalystInstance object
     if (mDebugOverlayController != null) {
@@ -692,15 +666,20 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
       mDebugOverlayController = new DebugOverlayController(reactContext);
     }
 
-    if (mCurrentContext != null) {
+    if (mCurrentReactContext != null) {
       try {
         URL sourceUrl = new URL(getSourceUrl());
-        String path = sourceUrl.getPath().substring(1); // strip initial slash in path
+        String path = sourceUrl.getPath();
+        if (path != null) {
+          path = path.substring(1); // strip initial slash in path
+        }
         String host = sourceUrl.getHost();
+        String scheme = sourceUrl.getProtocol();
         int port = sourceUrl.getPort() != -1 ? sourceUrl.getPort() : sourceUrl.getDefaultPort();
-        mCurrentContext
+        mCurrentReactContext
             .getJSModule(HMRClient.class)
-            .setup("android", path, host, port, mDevSettings.isHotModuleReplacementEnabled());
+            .setup(
+                "android", path, host, port, mDevSettings.isHotModuleReplacementEnabled(), scheme);
       } catch (MalformedURLException e) {
         showNewJavaError(e.getMessage(), e);
       }
@@ -718,8 +697,8 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
     }
   }
 
-  protected @Nullable ReactContext getCurrentContext() {
-    return mCurrentContext;
+  public @Nullable ReactContext getCurrentReactContext() {
+    return mCurrentReactContext;
   }
 
   public @Nullable String getJSAppBundleName() {
@@ -796,7 +775,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
                 public void onSuccess() {
                   UiThreadUtil.runOnUiThread(() -> hideSplitBundleDevLoadingView());
 
-                  @Nullable ReactContext context = mCurrentContext;
+                  @Nullable ReactContext context = mCurrentReactContext;
                   if (context == null || !context.hasActiveReactInstance()) {
                     return;
                   }
@@ -874,29 +853,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   @Override
   public @Nullable ErrorType getLastErrorType() {
     return mLastErrorType;
-  }
-
-  private void handleCaptureHeap(final Responder responder) {
-    if (mCurrentContext == null) {
-      return;
-    }
-    JSCHeapCapture heapCapture = mCurrentContext.getNativeModule(JSCHeapCapture.class);
-
-    if (heapCapture != null) {
-      heapCapture.captureHeap(
-          mApplicationContext.getCacheDir().getPath(),
-          new JSCHeapCapture.CaptureCallback() {
-            @Override
-            public void onSuccess(File capture) {
-              responder.respond(capture.toString());
-            }
-
-            @Override
-            public void onFailure(JSCHeapCapture.CaptureException error) {
-              responder.error(error.toString());
-            }
-          });
-    }
   }
 
   private void updateLastErrorInfo(
@@ -994,19 +950,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   }
 
   @Override
-  public void setRemoteJSDebugEnabled(final boolean isRemoteJSDebugEnabled) {
-    if (!mIsDevSupportEnabled) {
-      return;
-    }
-
-    UiThreadUtil.runOnUiThread(
-        () -> {
-          mDevSettings.setRemoteJSDebugEnabled(isRemoteJSDebugEnabled);
-          handleReloadJS();
-        });
-  }
-
-  @Override
   public void setFpsDebugEnabled(final boolean isFpsDebugEnabled) {
     if (!mIsDevSupportEnabled) {
       return;
@@ -1040,9 +983,16 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
 
       // start shake gesture detector
       if (!mIsShakeDetectorStarted) {
-        mShakeDetector.start(
-            (SensorManager) mApplicationContext.getSystemService(Context.SENSOR_SERVICE));
-        mIsShakeDetectorStarted = true;
+        SensorManager sensorManager =
+            (SensorManager) mApplicationContext.getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+          mShakeDetector.start(sensorManager);
+          mIsShakeDetectorStarted = true;
+        } else {
+          FLog.w(
+              ReactConstants.TAG,
+              "Couldn't register shake gesture detector, sensor service is null");
+        }
       }
 
       // register reload app broadcast receiver
@@ -1073,7 +1023,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
 
             @Override
             public void onPackagerReloadCommand() {
-              if (!InspectorFlags.getEnableModernCDPRegistry()) {
+              if (!InspectorFlags.getFuseboxEnabled()) {
                 // Disable debugger to resume the JsVM & avoid thread locks while reloading
                 mDevServerHelper.disableDebugger();
               }
@@ -1083,11 +1033,6 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
             @Override
             public void onPackagerDevMenuCommand() {
               UiThreadUtil.runOnUiThread(() -> showDevOptionsDialog());
-            }
-
-            @Override
-            public void onCaptureHeapCommand(final Responder responder) {
-              UiThreadUtil.runOnUiThread(() -> handleCaptureHeap(responder));
             }
 
             @Override
@@ -1171,7 +1116,7 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   @Override
   public void openDebugger() {
     mDevServerHelper.openDebugger(
-        mCurrentContext, mApplicationContext.getString(R.string.catalyst_open_debugger_error));
+        mCurrentReactContext, mApplicationContext.getString(R.string.catalyst_open_debugger_error));
   }
 
   @Override
@@ -1183,5 +1128,10 @@ public abstract class DevSupportManagerBase implements DevSupportManager {
   @Override
   public void hidePausedInDebuggerOverlay() {
     mPausedInDebuggerOverlayManager.hidePausedInDebuggerOverlay();
+  }
+
+  @Override
+  public void setAdditionalOptionForPackager(String name, String value) {
+    mDevSettings.getPackagerConnectionSettings().setAdditionalOptionForPackager(name, value);
   }
 }

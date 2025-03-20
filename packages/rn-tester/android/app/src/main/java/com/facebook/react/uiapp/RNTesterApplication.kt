@@ -10,16 +10,15 @@ package com.facebook.react.uiapp
 import android.app.Application
 import com.facebook.fbreact.specs.SampleLegacyModule
 import com.facebook.fbreact.specs.SampleTurboModule
+import com.facebook.react.BaseReactPackage
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
-import com.facebook.react.TurboReactPackage
 import com.facebook.react.ViewManagerOnDemandReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.common.assets.ReactFontManager
-import com.facebook.react.config.ReactFeatureFlags
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
@@ -28,13 +27,15 @@ import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.facebook.react.osslibraryexample.OSSLibraryExamplePackage
 import com.facebook.react.popupmenu.PopupMenuPackage
 import com.facebook.react.shell.MainReactPackage
+import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.react.uiapp.component.MyLegacyViewManager
 import com.facebook.react.uiapp.component.MyNativeViewManager
+import com.facebook.react.uiapp.component.ReportFullyDrawnViewManager
 import com.facebook.react.uimanager.ReactShadowNode
 import com.facebook.react.uimanager.ViewManager
 import com.facebook.soloader.SoLoader
 
-class RNTesterApplication : Application(), ReactApplication {
+internal class RNTesterApplication : Application(), ReactApplication {
   override val reactNativeHost: ReactNativeHost by lazy {
     object : DefaultReactNativeHost(this) {
       public override fun getJSMainModuleName(): String = BuildConfig.JS_MAIN_MODULE_NAME
@@ -48,13 +49,12 @@ class RNTesterApplication : Application(), ReactApplication {
             MainReactPackage(),
             PopupMenuPackage(),
             OSSLibraryExamplePackage(),
-            object : TurboReactPackage() {
+            object : BaseReactPackage() {
               override fun getModule(
                   name: String,
                   reactContext: ReactApplicationContext
               ): NativeModule? {
-                @Suppress("DEPRECATION")
-                if (!ReactFeatureFlags.useTurboModules) {
+                if (!isNewArchEnabled) {
                   return null
                 }
                 if (SampleTurboModule.NAME == name) {
@@ -71,27 +71,24 @@ class RNTesterApplication : Application(), ReactApplication {
               // modules.
               override fun getReactModuleInfoProvider(): ReactModuleInfoProvider =
                   ReactModuleInfoProvider {
-                    @Suppress("DEPRECATION")
-                    if (ReactFeatureFlags.useTurboModules) {
+                    if (isNewArchEnabled) {
                       mapOf(
                           SampleTurboModule.NAME to
                               ReactModuleInfo(
                                   SampleTurboModule.NAME,
                                   "SampleTurboModule",
-                                  false, // canOverrideExistingModule
-                                  false, // needsEagerInit
-                                  false, // isCxxModule
-                                  true // isTurboModule
-                                  ),
+                                  canOverrideExistingModule = false,
+                                  needsEagerInit = false,
+                                  isCxxModule = false,
+                                  isTurboModule = true),
                           SampleLegacyModule.NAME to
                               ReactModuleInfo(
                                   SampleLegacyModule.NAME,
                                   "SampleLegacyModule",
-                                  false, // canOverrideExistingModule
-                                  false, // needsEagerInit
-                                  false, // isCxxModule
-                                  false // isTurboModule
-                                  ))
+                                  canOverrideExistingModule = false,
+                                  needsEagerInit = false,
+                                  isCxxModule = false,
+                                  isTurboModule = false))
                     } else {
                       emptyMap()
                     }
@@ -103,23 +100,25 @@ class RNTesterApplication : Application(), ReactApplication {
               ): List<NativeModule> = emptyList()
 
               override fun getViewManagerNames(reactContext: ReactApplicationContext) =
-                  listOf("RNTMyNativeView", "RNTMyLegacyNativeView")
+                  listOf("RNTMyNativeView", "RNTMyLegacyNativeView", "RNTReportFullyDrawnView")
 
               override fun createViewManagers(
                   reactContext: ReactApplicationContext
               ): List<ViewManager<*, *>> =
-                  listOf(MyNativeViewManager(), MyLegacyViewManager(reactContext))
+                  listOf(
+                      MyNativeViewManager(),
+                      MyLegacyViewManager(reactContext),
+                      ReportFullyDrawnViewManager())
 
               override fun createViewManager(
                   reactContext: ReactApplicationContext,
                   viewManagerName: String
               ): ViewManager<*, out ReactShadowNode<*>>? =
-                  if (viewManagerName == "RNTMyNativeView") {
-                    MyNativeViewManager()
-                  } else if (viewManagerName == "RNTMyLegacyNativeView") {
-                    MyLegacyViewManager(reactContext)
-                  } else {
-                    null
+                  when (viewManagerName) {
+                    "RNTMyNativeView" -> MyNativeViewManager()
+                    "RNTMyLegacyNativeView" -> MyLegacyViewManager(reactContext)
+                    "RNTReportFullyDrawnView" -> ReportFullyDrawnViewManager()
+                    else -> null
                   }
             })
       }
@@ -135,7 +134,15 @@ class RNTesterApplication : Application(), ReactApplication {
   override fun onCreate() {
     ReactFontManager.getInstance().addCustomFont(this, "Rubik", R.font.rubik)
     super.onCreate()
-    SoLoader.init(this, /* native exopackage */ false)
+
+    if (BuildConfig.IS_INTERNAL_BUILD) {
+      // For Buck we call the simple init() as the SoMapping is built-from-source inside SoLoader
+      SoLoader.init(this, false)
+    } else {
+      // For Gradle instead, we need to specify it as constructor parameter.
+      SoLoader.init(this, OpenSourceMergedSoMapping)
+    }
+
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       load()
     }

@@ -21,9 +21,7 @@ JsiIntegrationTestHermesEngineAdapter::JsiIntegrationTestHermesEngineAdapter(
 
 /* static */ InspectorFlagOverrides
 JsiIntegrationTestHermesEngineAdapter::getInspectorFlagOverrides() noexcept {
-  return {
-      .enableModernCDPRegistry = true,
-  };
+  return {};
 }
 
 RuntimeTargetDelegate&

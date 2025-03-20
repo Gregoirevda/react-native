@@ -13,8 +13,6 @@
 #include <folly/json.h>
 #include <glog/logging.h>
 #include <jsinspector-modern/InspectorFlags.h>
-#include <react/featureflags/ReactNativeFeatureFlags.h>
-#include <react/featureflags/ReactNativeFeatureFlagsDefaults.h>
 #include <react/runtime/hermes/HermesInstance.h>
 
 using namespace ::testing;
@@ -27,31 +25,27 @@ ReactInstanceIntegrationTest::ReactInstanceIntegrationTest()
     : runtime(nullptr),
       instance(nullptr),
       messageQueueThread(std::make_shared<MockMessageQueueThread>()),
-      errorHandler(std::make_shared<ErrorUtils>()) {}
+      errorHandler(std::make_shared<ErrorUtils>()),
+      testMode_(GetParam()) {}
 
 void ReactInstanceIntegrationTest::SetUp() {
+  if (testMode_ == ReactInstanceIntegrationTestMode::LEGACY_HERMES) {
+    InspectorFlags::getInstance().dangerouslyDisableFuseboxForTest();
+  }
+
   auto mockRegistry = std::make_unique<MockTimerRegistry>();
   auto timerManager =
       std::make_shared<react::TimerManager>(std::move(mockRegistry));
 
-  auto onJsError = [](const JsErrorHandler::ParsedError& errorMap) noexcept {
+  auto onJsError = [](jsi::Runtime& /*runtime*/,
+                      const JsErrorHandler::ProcessedError& error) noexcept {
     LOG(INFO) << "[jsErrorHandlingFunc called]";
-    LOG(INFO) << "message: " << errorMap.message;
-    LOG(INFO) << "exceptionId: " << std::to_string(errorMap.exceptionId);
-    LOG(INFO) << "isFatal: "
-              << std::to_string(static_cast<int>(errorMap.isFatal));
-    auto frames = errorMap.frames;
-    for (const auto& mapBuffer : frames) {
-      LOG(INFO) << "[Frame]" << std::endl << "\tfile: " << mapBuffer.fileName;
-      LOG(INFO) << "\tmethodName: " << mapBuffer.methodName;
-      LOG(INFO) << "\tlineNumber: " << std::to_string(mapBuffer.lineNumber);
-      LOG(INFO) << "\tcolumn: " << std::to_string(mapBuffer.columnNumber);
-    }
+    LOG(INFO) << error << std::endl;
   };
 
   auto jsRuntimeFactory = std::make_unique<react::HermesInstance>();
   std::unique_ptr<react::JSRuntime> runtime_ =
-      jsRuntimeFactory->createJSRuntime(nullptr, nullptr, messageQueueThread);
+      jsRuntimeFactory->createJSRuntime(nullptr, messageQueueThread, false);
   jsi::Runtime* jsiRuntime = &runtime_->getRuntime();
 
   // Error handler:
@@ -62,7 +56,7 @@ void ReactInstanceIntegrationTest::SetUp() {
 
   std::shared_ptr<HostTarget> hostTargetIfModernCDP = nullptr;
 
-  if (InspectorFlags::getInstance().getEnableModernCDPRegistry()) {
+  if (InspectorFlags::getInstance().getFuseboxEnabled()) {
     VoidExecutor inspectorExecutor = [this](auto callback) {
       immediateExecutor_.add(callback);
     };
@@ -90,15 +84,12 @@ void ReactInstanceIntegrationTest::SetUp() {
     // Under modern CDP, the React host is responsible for adding itself as
     // the root target on startup.
     pageId_ = inspector.addPage(
-        "mock-title",
+        "mock-description",
         "mock-vm",
         [hostTargetIfModernCDP](std::unique_ptr<IRemoteConnection> remote)
             -> std::unique_ptr<ILocalConnection> {
-          auto localConnection = hostTargetIfModernCDP->connect(
-              std::move(remote),
-              {
-                  .integrationName = "ReactInstanceIntegrationTest",
-              });
+          auto localConnection =
+              hostTargetIfModernCDP->connect(std::move(remote));
           return localConnection;
         },
         // TODO: Allow customisation of InspectorTargetCapabilities
@@ -131,7 +122,7 @@ void ReactInstanceIntegrationTest::TearDown() {
   clientToVM_.reset();
 
   if (pageId_.has_value() &&
-      InspectorFlags::getInstance().getEnableModernCDPRegistry()) {
+      InspectorFlags::getInstance().getFuseboxEnabled()) {
     // Under modern CDP, clean up the page we added in SetUp and destroy
     // resources owned by HostTarget.
     getInspectorInstance().removePage(pageId_.value());
@@ -140,7 +131,6 @@ void ReactInstanceIntegrationTest::TearDown() {
 
   // Expect the remote connection to have been destroyed.
   EXPECT_EQ(mockRemoteConnections_[0], nullptr);
-  ReactNativeFeatureFlags::dangerouslyReset();
 }
 
 void ReactInstanceIntegrationTest::initializeRuntime(std::string_view script) {
@@ -203,12 +193,12 @@ bool ReactInstanceIntegrationTest::verbose(bool isVerbose) {
 
 #pragma endregion
 
-TEST_F(ReactInstanceIntegrationTest, RuntimeEvalTest) {
+TEST_P(ReactInstanceIntegrationTest, RuntimeEvalTest) {
   auto val = run("1 + 2");
   EXPECT_EQ(val.asNumber(), 3);
 }
 
-TEST_P(ReactInstanceIntegrationTestWithFlags, ConsoleLog) {
+TEST_P(ReactInstanceIntegrationTest, ConsoleLog) {
   EXPECT_CALL(
       getRemoteConnection(),
       onMessage(JsonParsed(
@@ -232,17 +222,10 @@ TEST_P(ReactInstanceIntegrationTestWithFlags, ConsoleLog) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    ReactInstanceVaryingInspectorFlags,
-    ReactInstanceIntegrationTestWithFlags,
+    ReactInstanceVaryingInspectorBackend,
+    ReactInstanceIntegrationTest,
     ::testing::Values(
-        InspectorFlagOverrides{
-            .enableCxxInspectorPackagerConnection = false,
-            .enableModernCDPRegistry = false},
-        InspectorFlagOverrides{
-            .enableCxxInspectorPackagerConnection = true,
-            .enableModernCDPRegistry = false},
-        InspectorFlagOverrides{
-            .enableCxxInspectorPackagerConnection = true,
-            .enableModernCDPRegistry = true}));
+        ReactInstanceIntegrationTestMode::LEGACY_HERMES,
+        ReactInstanceIntegrationTestMode::FUSEBOX));
 
 } // namespace facebook::react::jsinspector_modern

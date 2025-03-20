@@ -8,7 +8,7 @@
 #include "HermesExecutorFactory.h"
 
 #include <cxxreact/MessageQueueThread.h>
-#include <cxxreact/SystraceSection.h>
+#include <cxxreact/TraceSection.h>
 #include <hermes/hermes.h>
 #include <jsi/decorator.h>
 #include <jsinspector-modern/InspectorFlags.h>
@@ -197,14 +197,13 @@ std::unique_ptr<JSExecutor> HermesExecutorFactory::createJSExecutor(
     std::shared_ptr<MessageQueueThread> jsQueue) {
   std::unique_ptr<HermesRuntime> hermesRuntime;
   {
-    SystraceSection s("makeHermesRuntime");
+    TraceSection s("makeHermesRuntime");
     hermesRuntime = hermes::makeHermesRuntime(runtimeConfig_);
   }
 
   HermesRuntime& hermesRuntimeRef = *hermesRuntime;
   auto& inspectorFlags = jsinspector_modern::InspectorFlags::getInstance();
-  bool enableDebugger =
-      !inspectorFlags.getEnableModernCDPRegistry() && enableDebugger_;
+  bool enableDebugger = !inspectorFlags.getFuseboxEnabled() && enableDebugger_;
   auto decoratedRuntime = std::make_shared<DecoratedRuntime>(
       std::move(hermesRuntime),
       hermesRuntimeRef,
